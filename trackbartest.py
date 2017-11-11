@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from skimage import filters
+from control import *
 
 barwin = np.zeros((1,512,3), np.uint8)
 cv2.namedWindow('BarWindow')
@@ -13,6 +13,8 @@ cv2.CascadeClassifier(path)
 for path in ['haarcascade_frontalface_default.xml',
              'haarcascade_profileface.xml']
 ]
+
+sliders = [[(30, 30, 30, 100), 0.5, 'music']] # each slider is (x,y,w,h) and slider_level
 
 def bb_intersection_over_union(boxA, boxB):
     # determine the (x, y)-coordinates of the intersection rectangle
@@ -111,9 +113,42 @@ def detect_hands(thresholded, face):
 
     return False, lft, rgt, left_box, right_box, top_box
 
+def draw_sliders(img, pos1, pos2):
+    img = np.array(img, dtype=np.float)
+    col_idx = 0
+
+    for slider in sliders:
+        [(x,y,w,h), slider_level, tp] = slider
+        cv2.rectangle(img,(x, y),(x + w, y + h),(255,0,0),2)
+        # Set filled slider level
+        img[y + h - int(h * slider_level) : y + h, x : x + w,:] += np.array([255 // 5, 0, 0], dtype=np.float)
+        img[y + h - int(h * slider_level) : y + h, x : x + w,:] /= 1.2
+
+        # Set the new slider_level value
+        old_slider_level = slider_level
+        if pos1 is not None and y <= pos1[1] and pos1[1] <= y + h and x <= pos1[0] and pos1[0] <= x + w:
+            slider_level = (y + h - pos1[1]) / 1.0 / h
+
+        if pos2 is not None and y <= pos2[1] and pos2[1] <= y + h and x <= pos2[0] and pos2[0] <= x + w:
+            slider_level = (y + h - pos2[1]) / 1.0 / h
+
+        if old_slider_level != slider_level:
+            sliders[col_idx][1] = slider_level
+            #set_slider_value(sliders[col_idx][1], sliders[col_idx][2])
+
+        col_idx += 1
+
+
+    img = np.clip(img, 0, 255)
+    img = np.array(img, dtype=np.uint8)
+
+    return img
+
 face = (None, None, None, None)
-tracker = cv2.Tracker_create("MIL")
-cap = cv2.VideoCapture(0)
+tracker = cv2.TrackerMIL_create()
+cap = cv2.VideoCapture(1)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH,640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)
 cnt = 0
 
 while( cap.isOpened() ) :
@@ -168,57 +203,13 @@ while( cap.isOpened() ) :
     if pos_rgt is not None:
         img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
 
+    img2 = draw_sliders(img2, pos_lft, pos_rgt)
+
+    img2 = cv2.resize(img2, None, None, 2, 2)
+
     cv2.imshow('orig',img2)
 
-
-
-        ##midx = x + w // 2
-        #thresholded[:, max(0, x - w // 2) : min(x + w + w // 2, img.shape[1])] = 0
-        #thresholded[y + h : img.shape[0], :] = 0
-
-
-
     cv2.imshow('bgsub',thresholded)
-
-        #gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        #mask = gray < filters.threshold_otsu(gray)
-        #mask = np.uint8(mask)
-        #mask[mask > 0] = 255
-        ##mask = fgbg.apply(cv2.GaussianBlur(img, (41, 41), 0))
-
-        ##mask |= cv2.inRange(cv2.GaussianBlur(img, (41, 41), 0)[:, :, :2],
-        ##                   np.array([0, 90], np.uint8),
-        ##                   np.array([120, 250], np.uint8))
-        #cv2.imshow('mask',mask)
-
-
-
-    #if cnt == 1:
-    #    track, roi = tracker.update(img)
-    #    if track:
-    #        (x, y, w, h) = roi
-    #        print(x, y, w, h)
-    #        x = int(x)
-    #        y = int(y)
-    #        w = int(w)
-    #        h = int(h)
-    #        cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),2)
-    #        fface = img[y:y+h, x:x+w, :]
-    #        fface = cv2.GaussianBlur(fface,(45,45),0)
-    #        img[y:y+h, x:x+w] = fface
-    #    else:
-    #        print("lost tracker")
-    #cv2.imshow('orig',img)
-
-    #print(img.shape)
-    #img = cv2.resize(img, None, None, 0.5, 0.5)
-    #img = cv2.flip(img, 1)
-
-    #pos = detect_object(img, fgbg, face, tracker)
-    #if pos is not None:
-    #    img = cv2.circle(img, (int(pos[0]), int(pos[1])), 10, (255, 0, 0))
-
-
 
     k = cv2.waitKey(10)
     if k == 27:

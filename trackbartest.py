@@ -1,149 +1,226 @@
 import cv2
 import numpy as np
+from skimage import filters
 
 barwin = np.zeros((1,512,3), np.uint8)
 cv2.namedWindow('BarWindow')
 
-def nothing(x):
-  pass
+#face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+#face2_cascade = cv2.CascadeClassifier('haarcascade_profileface.xml')
+hand_cascades = [
+cv2.CascadeClassifier(path)
+#for path in ['hands.xml']
+for path in ['haarcascade_frontalface_default.xml',
+             'haarcascade_profileface.xml']
+]
 
-# create trackbars for color change
-cv2.createTrackbar('Smin','BarWindow',0,255,nothing)
-cv2.createTrackbar('Smax','BarWindow',0,255,nothing)
-cv2.createTrackbar('Vmin','BarWindow',0,255,nothing)
-cv2.createTrackbar('Vmax','BarWindow',0,255,nothing)
+def bb_intersection_over_union(boxA, boxB):
+    # determine the (x, y)-coordinates of the intersection rectangle
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[0] + boxA[2], boxB[0] + boxB[2])
+    yB = min(boxA[1] + boxA[3], boxB[1] + boxB[3])
 
-# 0 108 144
-# 54 132
-# 98 199
-color = [0,0,0]
-epsilon = 50
+    # compute the area of intersection rectangle
+    interArea = (xB - xA + 1) * (yB - yA + 1)
 
-def detect_object(img):
-    blurValue = 41  # GaussianBlur parameter
-    
-    minH = 0
-    maxH = 100
-    minS = cv2.getTrackbarPos('Smin','BarWindow')
-    maxS = cv2.getTrackbarPos('Smax','BarWindow')
-    minV = cv2.getTrackbarPos('Vmin','BarWindow')
-    maxV = cv2.getTrackbarPos('Vmax','BarWindow')
-    
-    out = cv2.GaussianBlur(img, (blurValue, blurValue), 0)
-    out = cv2.cvtColor(out, cv2.COLOR_BGR2HSV);
-    mask = cv2.inRange(out, np.asarray((minH, minS, minV)),
-                            np.asarray((maxH, maxS, maxV)))
-                            
-    cv2.imshow("Mask",mask)
-    connectivity = 4
-    output = cv2.connectedComponentsWithStats(mask, connectivity, cv2.CV_32S)
-    num_labels = output[0]
+    # compute the area of both the prediction and ground-truth
+    # rectangles
+    boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+    boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
 
-    if num_labels == 0: return None
+    # compute the intersection over union by taking the intersection
+    # area and dividing it by the sum of prediction + ground-truth
+    # areas - the interesection area
+    iou = interArea / float(boxAArea + boxBArea - interArea)
 
-    labels = output[1]
-    stats = output[2]
-    centroids = output[3]
+    # return the intersection over union value
+    return iou
 
-    # Remove largest - background
-    stats[np.argmax(stats[:, cv2.CC_STAT_AREA]), cv2.CC_STAT_AREA] = 0
+def detect_face(gray):
 
-    max_component = np.argmax(stats[:, cv2.CC_STAT_AREA])
+    for cascade in hand_cascades:
 
-    if stats[max_component, cv2.CC_STAT_AREA] < 50: return None
+        faces = cascade.detectMultiScale(gray, 1.3, 5)
+        face_size = [w * h for (x, y, w, h) in faces]
 
-    return centroids[max_component]
+        if len(face_size) > 0:
+            max_face = np.argmax(face_size)
+            face = faces[max_face]
+            return face
 
+    return (None, None, None, None)
+
+def track_face(img, old_face, tracker):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    new_face = detect_face(gray)
+    if old_face[0] is not None:
+        face = tracker.update(img)
+    else:
+        face = (None, None, None, None)
+
+    if face[0] is not None:
+        track, face = tracker.update(img)
+        if not track:
+            face = (None, None, None, None)
+
+    if face[0] is None and new_face[0] is None:
+        face = old_face
+    elif face[0] is None and new_face[0] is not None:
+        face = new_face
+    elif face[0] is not None and new_face[0] is None:
+        face = face
+    else:
+        metric =  bb_intersection_over_union(face, new_face)
+        if metric < 0.7:
+            face = new_face
+
+    return face
+
+def detect_hands(thresholded, face):
+
+    (x, y, w, h) = face
+    left_box = (0, 0, x - w // 2, y + h)
+    right_box = (x + w + w // 2, 0, img.shape[1], y + h)
+    top_box = (left_box[2], 0, right_box[0], max(0, y - h // 2))
+
+    kernel = np.ones((5,5),np.uint8)
+    eroded = cv2.erode(thresholded, kernel, iterations = 1)
+    #eroded = np.copy(thresholded)
+
+    MIN_PIX = 100
+
+    if np.sum(eroded[top_box[1] : top_box[3], top_box[0] : top_box[2]] > 0) > MIN_PIX:
+        return True, None, None, left_box, right_box, top_box
+
+
+    py, px = np.where(eroded[left_box[1] : left_box[3], left_box[0] : left_box[2]] > 0)
+    if len(px) > MIN_PIX:
+        idx = np.argmin(py * img.shape[1] + px)
+        lft = (px[idx] + left_box[0], left_box[1] + py[idx])
+    else:
+        lft = None
+
+
+    py, px = np.where(eroded[right_box[1] : right_box[3], right_box[0] : right_box[2]] > 0)
+    if len(px) > MIN_PIX:
+        idx = np.argmin(py * img.shape[1] + px)
+        rgt = (px[idx] + right_box[0], py[idx] + right_box[1])
+    else:
+        rgt = None
+
+    return False, lft, rgt, left_box, right_box, top_box
+
+face = (None, None, None, None)
+tracker = cv2.Tracker_create("MIL")
 cap = cv2.VideoCapture(0)
 cnt = 0
+
 while( cap.isOpened() ) :
     ret,img = cap.read()
-    img = cv2.resize(img, None, None, 1, 1)
-    pos = detect_object(img)
-    if pos is not None:
-        img = cv2.circle(img, (int(pos[0]), int(pos[1])), 10, (255, 0, 0))
+    img = cv2.resize(img, None, None, 0.5, 0.5)
+    img = cv2.flip(img, 1)
 
-    cv2.imshow('orig',img)
-  
-    cv2.imshow('BarWindow',barwin)
-    # get current positions of four trackbars
-    h = 0
-    s = cv2.getTrackbarPos('Smin','BarWindow')
-    v = cv2.getTrackbarPos('V','BarWindow')
+    # Face detection
+    face = track_face(img, face, tracker)
 
-    color = [h,s,v]
+    if face[0] is not None:
+        (x, y, w, h) = face
+        x = int(x)
+        y = int(y)
+        w = int(w)
+        h = int(h)
+        img2 = np.copy(img)
+        cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
+        fface = img2[y:y+h, x:x+w, :]
+        fface = cv2.GaussianBlur(fface,(45,45),0)
+        img2[y:y+h, x:x+w] = fface
+    else:
+        continue
+
+    # BG SUB
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (7, 7), 0)
+    if cnt < 30:
+        if cnt == 0:
+            bg = gray.copy().astype("float")
+            cnt = 1
+        else:
+            cv2.accumulateWeighted(gray, bg, 0.5)
+            cnt += 1
+
+
+    diff = cv2.absdiff(bg.astype("uint8"), gray)
+    thresholded = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)[1]
+
+    # Hand detection
+    on_top, pos_lft, pos_rgt, left_box, right_box, top_box = detect_hands(thresholded, face)
+
+    img2 = cv2.rectangle(img2, (left_box[0], left_box[1]), (left_box[2], left_box[3]), (255, 0, 0))
+    img2 = cv2.rectangle(img2, (right_box[0], right_box[1]), (right_box[2], right_box[3]), (255, 0, 0))
+    if not on_top:
+        img2 = cv2.rectangle(img2, (top_box[0], top_box[1]), (top_box[2], top_box[3]), (255, 0, 0))
+    else:
+        img2 = cv2.rectangle(img2, (top_box[0], top_box[1]), (top_box[2], top_box[3]), (0, 0, 255))
+
+    if pos_lft is not None:
+        img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 10, (0, 0, 255))
+    if pos_rgt is not None:
+        img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
+
+    cv2.imshow('orig',img2)
+
+
+
+        ##midx = x + w // 2
+        #thresholded[:, max(0, x - w // 2) : min(x + w + w // 2, img.shape[1])] = 0
+        #thresholded[y + h : img.shape[0], :] = 0
+
+
+
+    cv2.imshow('bgsub',thresholded)
+
+        #gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        #mask = gray < filters.threshold_otsu(gray)
+        #mask = np.uint8(mask)
+        #mask[mask > 0] = 255
+        ##mask = fgbg.apply(cv2.GaussianBlur(img, (41, 41), 0))
+
+        ##mask |= cv2.inRange(cv2.GaussianBlur(img, (41, 41), 0)[:, :, :2],
+        ##                   np.array([0, 90], np.uint8),
+        ##                   np.array([120, 250], np.uint8))
+        #cv2.imshow('mask',mask)
+
+
+
+    #if cnt == 1:
+    #    track, roi = tracker.update(img)
+    #    if track:
+    #        (x, y, w, h) = roi
+    #        print(x, y, w, h)
+    #        x = int(x)
+    #        y = int(y)
+    #        w = int(w)
+    #        h = int(h)
+    #        cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),2)
+    #        fface = img[y:y+h, x:x+w, :]
+    #        fface = cv2.GaussianBlur(fface,(45,45),0)
+    #        img[y:y+h, x:x+w] = fface
+    #    else:
+    #        print("lost tracker")
+    #cv2.imshow('orig',img)
+
+    #print(img.shape)
+    #img = cv2.resize(img, None, None, 0.5, 0.5)
+    #img = cv2.flip(img, 1)
+
+    #pos = detect_object(img, fgbg, face, tracker)
+    #if pos is not None:
+    #    img = cv2.circle(img, (int(pos[0]), int(pos[1])), 10, (255, 0, 0))
+
+
 
     k = cv2.waitKey(10)
     if k == 27:
         break
     continue
-
-    #hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV);
-    #mid = img[img.shape[0] // 2, img.shape[1] // 2, :]
-
-    #diff = np.sqrt(np.sum((img - mid)**2, axis = 2, keepdims = True))
-    #diff = np.tile(diff, (1, 1, 3))
-    #diff[diff > 10] = 0
-    #diff[diff > 0] = 1
-    #img *= np.uint8(diff)
-    cv2.imshow('input',hsv)
-
-    k = cv2.waitKey(10)
-    if k == 27:
-        break
-    continue
-
-    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray,(5,5),0)
-
-    ret,thresh1 = cv2.threshold(blur,70,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
-
-    _, contours, hierarchy = cv2.findContours(thresh1,
-            cv2.RETR_TREE,
-            cv2.CHAIN_APPROX_SIMPLE)
-    drawing = np.zeros(img.shape,np.uint8)
-
-    max_area=0
-
-    for i in range(len(contours)):
-            cnt=contours[i]
-            area = cv2.contourArea(cnt)
-            if(area>max_area):
-                max_area=area
-                ci=i
-    cnt=contours[ci]
-    hull = cv2.convexHull(cnt)
-    moments = cv2.moments(cnt)
-    if moments['m00']!=0:
-                cx = int(moments['m10']/moments['m00']) # cx = M10/M00
-                cy = int(moments['m01']/moments['m00']) # cy = M01/M00
-
-    centr=(cx,cy)
-    cv2.circle(img,centr,5,[0,0,255],2)
-    cv2.drawContours(drawing,[cnt],0,(0,255,0),2)
-    cv2.drawContours(drawing,[hull],0,(0,0,255),2)
-
-    cnt = cv2.approxPolyDP(cnt,0.01*cv2.arcLength(cnt,True),True)
-    hull = cv2.convexHull(cnt,returnPoints = False)
-
-    if(1):
-               defects = cv2.convexityDefects(cnt,hull)
-               mind=0
-               maxd=0
-               for i in range(defects.shape[0]):
-                    s,e,f,d = defects[i,0]
-                    start = tuple(cnt[s][0])
-                    end = tuple(cnt[e][0])
-                    far = tuple(cnt[f][0])
-                    dist = cv2.pointPolygonTest(cnt,centr,True)
-                    cv2.line(img,start,end,[0,255,0],2)
-
-                    cv2.circle(img,far,5,[0,0,255],-1)
-               print(i)
-               i=0
-    cv2.imshow('output',drawing)
-    cv2.imshow('input',img)
-
-    k = cv2.waitKey(10)
-    if k == 27:
-        break

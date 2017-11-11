@@ -2,6 +2,10 @@ import cv2
 import numpy as np
 from control import *
 
+# Flags
+DRAW_SLIDERS = False
+APPLY_SLIDER_ACTIONS = False
+
 barwin = np.zeros((1,512,3), np.uint8)
 cv2.namedWindow('BarWindow')
 
@@ -134,7 +138,8 @@ def draw_sliders(img, pos1, pos2):
 
         if old_slider_level != slider_level:
             sliders[col_idx][1] = slider_level
-            #set_slider_value(sliders[col_idx][1], sliders[col_idx][2])
+            if APPLY_SLIDER_ACTIONS:
+                set_slider_value(sliders[col_idx][1], sliders[col_idx][2])
 
         col_idx += 1
 
@@ -203,7 +208,8 @@ while( cap.isOpened() ) :
     if pos_rgt is not None:
         img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
 
-    img2 = draw_sliders(img2, pos_lft, pos_rgt)
+    if DRAW_SLIDERS:
+        img2 = draw_sliders(img2, pos_lft, pos_rgt)
 
     img2 = cv2.resize(img2, None, None, 2, 2)
 

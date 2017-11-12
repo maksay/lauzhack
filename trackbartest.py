@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from skimage import filters
+import math
 
 barwin = np.zeros((1,512,3), np.uint8)
 cv2.namedWindow('BarWindow')
@@ -110,6 +111,44 @@ def detect_hands(thresholded, face):
         rgt = None
 
     return False, lft, rgt, left_box, right_box, top_box
+    
+def detectfingers(img):
+  _, contours, hierarchy = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+  
+  length = len(contours)
+  if (length == 0): return 0
+
+  maxArea = -1
+  
+  for i in range(length):
+    area = cv2.contourArea(contours[i])
+    if (area>maxArea):
+      maxArea = area
+      ci = i
+  res = contours[ci]  
+  hull = cv2.convexHull(res, returnPoints=False)  
+  
+  if len(hull)>3:
+    defects = cv2.convexityDefects(res, hull)
+    if type(defects) != type(None):  # avoid crashing.   (BUG not found)
+
+        cnt = 0
+        for i in range(defects.shape[0]):  # calculate the angle
+            s, e, f, d = defects[i][0]
+            start = tuple(res[s][0])
+            end = tuple(res[e][0])
+            far = tuple(res[f][0])
+            a = math.sqrt((end[0] - start[0]) ** 2 + (end[1] - start[1]) ** 2)
+            b = math.sqrt((far[0] - start[0]) ** 2 + (far[1] - start[1]) ** 2)
+            c = math.sqrt((end[0] - far[0]) ** 2 + (end[1] - far[1]) ** 2)
+            angle = math.acos((b ** 2 + c ** 2 - a ** 2) / (2 * b * c))  # cosine theorem
+            if angle <= math.pi / 2:  # angle less than 90 degree, treat as fingers
+                cnt += 1
+                cv2.circle(img, far, 8, [211, 84, 0], -1)
+        return cnt
+  return 0
+  
+  
 
 face = (None, None, None, None)
 tracker = cv2.Tracker_create("MIL")
@@ -163,11 +202,17 @@ while( cap.isOpened() ) :
     else:
         img2 = cv2.rectangle(img2, (top_box[0], top_box[1]), (top_box[2], top_box[3]), (0, 0, 255))
 
+    fingerradius = 100
     if pos_lft is not None:
         img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 10, (0, 0, 255))
+        fingerbox = thresholded[left_box[1]:left_box[3], left_box[0]:left_box[2]]
+        cntFingers = detectfingers(fingerbox)
     if pos_rgt is not None:
         img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
+        fingerbox = thresholded[right_box[1]:right_box[3], right_box[0]:right_box[2]]
+        cntFingers = detectfingers(fingerbox) 
 
+        
     cv2.imshow('orig',img2)
 
 

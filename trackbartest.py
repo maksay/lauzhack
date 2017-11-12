@@ -150,10 +150,13 @@ def draw_sliders(img, pos1, pos2):
     return img
 
 face = (None, None, None, None)
-face_tracker = cv2.Tracker_create("MIL")
-cap = cv2.VideoCapture(1)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH,640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)
+try:
+    face_tracker = cv2.Tracker_create("MIL")
+except:
+    face_tracker = cv2.TrackerMIL_create()
+cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH,500)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT,200)
 cnt = 0
 
 left_history = []
@@ -161,6 +164,7 @@ right_history = []
 
 while( cap.isOpened() ) :
     ret,img = cap.read()
+    print(img.shape)
     img = cv2.resize(img, None, None, 0.5, 0.5)
     img = cv2.flip(img, 1)
     img2 = np.copy(img)
@@ -234,7 +238,8 @@ while( cap.isOpened() ) :
     if DRAW_SLIDERS:
         img2 = draw_sliders(img2, pos_lft, pos_rgt)
 
-    img2 = cv2.resize(img2, None, None, 2, 2)
+    img2 = cv2.resize(img2, None, None, 3, 3)
+    print(img2.shape)
 
     cv2.imshow('orig',img2)
 

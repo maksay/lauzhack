@@ -322,7 +322,7 @@ try:
     face_tracker = cv2.Tracker_create("MIL")
 except:
     face_tracker = cv2.TrackerMIL_create()
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 
 iron_man = cv2.imread('./iron_man.png')
 slider_music = cv2.imread('./slider_music.png')
@@ -388,7 +388,7 @@ while( cap.isOpened() ) :
             w=w//len(ironManHistory)
             h=h//len(ironManHistory)
 
-            cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
+            #cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
             iron_man_resized = cv2.resize(iron_man, (w, h))
             R = iron_man_resized[:, :, 0]
             G = iron_man_resized[:, :, 1]
@@ -626,6 +626,8 @@ while( cap.isOpened() ) :
     if pos_rgt is not None:
         thresholded = cv2.circle(thresholded, (pos_rgt[0], pos_rgt[1]), 10, 128)
 
+    thresholded = cv2.rectangle(thresholded, (left_box[0], left_box[1]), (left_box[2], left_box[3]), 128)
+    thresholded = cv2.rectangle(thresholded, (right_box[0], right_box[1]), (right_box[2], right_box[3]), 128)
     cv2.imshow('bgsub',thresholded)
 
     k = cv2.waitKey(10)

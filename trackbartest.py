@@ -1,19 +1,25 @@
 import cv2
 import numpy as np
-from skimage import filters
 import math
+from control import *
+
+# Flags
+DRAW_SLIDERS = False
+APPLY_SLIDER_ACTIONS = False
 
 barwin = np.zeros((1,512,3), np.uint8)
 cv2.namedWindow('BarWindow')
 
 #face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 #face2_cascade = cv2.CascadeClassifier('haarcascade_profileface.xml')
-hand_cascades = [
+face_cascades = [
 cv2.CascadeClassifier(path)
 #for path in ['hands.xml']
 for path in ['haarcascade_frontalface_default.xml',
              'haarcascade_profileface.xml']
 ]
+
+sliders = [[(30, 30, 30, 100), 0.5, 'music']] # each slider is (x,y,w,h) and slider_level
 
 def bb_intersection_over_union(boxA, boxB):
     # determine the (x, y)-coordinates of the intersection rectangle
@@ -38,9 +44,9 @@ def bb_intersection_over_union(boxA, boxB):
     # return the intersection over union value
     return iou
 
-def detect_face(gray):
+def detect_face(gray, cascades):
 
-    for cascade in hand_cascades:
+    for cascade in cascades:
 
         faces = cascade.detectMultiScale(gray, 1.3, 5)
         face_size = [w * h for (x, y, w, h) in faces]
@@ -52,9 +58,9 @@ def detect_face(gray):
 
     return (None, None, None, None)
 
-def track_face(img, old_face, tracker):
+def track_face(img, old_face, tracker, cascades):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    new_face = detect_face(gray)
+    new_face = detect_face(gray, cascades)
     if old_face[0] is not None:
         face = tracker.update(img)
     else:
@@ -150,30 +156,71 @@ def detectfingers(img):
   
   
 
+def draw_sliders(img, pos1, pos2):
+    img = np.array(img, dtype=np.float)
+    col_idx = 0
+
+    for slider in sliders:
+        [(x,y,w,h), slider_level, tp] = slider
+        cv2.rectangle(img,(x, y),(x + w, y + h),(255,0,0),2)
+        # Set filled slider level
+        img[y + h - int(h * slider_level) : y + h, x : x + w,:] += np.array([255 // 5, 0, 0], dtype=np.float)
+        img[y + h - int(h * slider_level) : y + h, x : x + w,:] /= 1.2
+
+        # Set the new slider_level value
+        old_slider_level = slider_level
+        if pos1 is not None and y <= pos1[1] and pos1[1] <= y + h and x <= pos1[0] and pos1[0] <= x + w:
+            slider_level = (y + h - pos1[1]) / 1.0 / h
+
+        if pos2 is not None and y <= pos2[1] and pos2[1] <= y + h and x <= pos2[0] and pos2[0] <= x + w:
+            slider_level = (y + h - pos2[1]) / 1.0 / h
+
+        if old_slider_level != slider_level:
+            sliders[col_idx][1] = slider_level
+            if APPLY_SLIDER_ACTIONS:
+                set_slider_value(sliders[col_idx][1], sliders[col_idx][2])
+
+        col_idx += 1
+
+
+    img = np.clip(img, 0, 255)
+    img = np.array(img, dtype=np.uint8)
+
+    return img
+
 face = (None, None, None, None)
-tracker = cv2.Tracker_create("MIL")
+try:
+    face_tracker = cv2.Tracker_create("MIL")
+except:
+    face_tracker = cv2.TrackerMIL_create()
 cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH,720)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)
 cnt = 0
+
+left_history = []
+right_history = []
 
 while( cap.isOpened() ) :
     ret,img = cap.read()
+    print(img.shape)
     img = cv2.resize(img, None, None, 0.5, 0.5)
     img = cv2.flip(img, 1)
+    img2 = np.copy(img)
 
     # Face detection
-    face = track_face(img, face, tracker)
-
+    face = track_face(img, face, face_tracker, face_cascades)
     if face[0] is not None:
         (x, y, w, h) = face
         x = int(x)
         y = int(y)
         w = int(w)
         h = int(h)
-        img2 = np.copy(img)
         cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
         fface = img2[y:y+h, x:x+w, :]
         fface = cv2.GaussianBlur(fface,(45,45),0)
         img2[y:y+h, x:x+w] = fface
+        #print(face)
     else:
         continue
 
@@ -212,58 +259,35 @@ while( cap.isOpened() ) :
         fingerbox = thresholded[right_box[1]:right_box[3], right_box[0]:right_box[2]]
         cntFingers = detectfingers(fingerbox) 
 
-        
+
+    # L->R gesture
+    if pos_rgt is not None:
+        right_history.append(np.copy(pos_rgt))
+        print("Adding %d" % len(right_history))
+    else:
+        if len(right_history) <= 15 and len(right_history) >= 7:
+            print(right_box)
+            print(right_history)
+            increasing = 0
+            non_increasing = 0
+            in_margin = 0
+            if right_history[0][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
+                if right_history[-1][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
+                    print("EXIT")
+                    exit(0)
+
+        right_history = []
+
+    # Draw sliders
+    if DRAW_SLIDERS:
+        img2 = draw_sliders(img2, pos_lft, pos_rgt)
+
+    img2 = cv2.resize(img2, None, None, 3.2, 3.2)
+    print(img2.shape)
+
     cv2.imshow('orig',img2)
 
-
-
-        ##midx = x + w // 2
-        #thresholded[:, max(0, x - w // 2) : min(x + w + w // 2, img.shape[1])] = 0
-        #thresholded[y + h : img.shape[0], :] = 0
-
-
-
     cv2.imshow('bgsub',thresholded)
-
-        #gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        #mask = gray < filters.threshold_otsu(gray)
-        #mask = np.uint8(mask)
-        #mask[mask > 0] = 255
-        ##mask = fgbg.apply(cv2.GaussianBlur(img, (41, 41), 0))
-
-        ##mask |= cv2.inRange(cv2.GaussianBlur(img, (41, 41), 0)[:, :, :2],
-        ##                   np.array([0, 90], np.uint8),
-        ##                   np.array([120, 250], np.uint8))
-        #cv2.imshow('mask',mask)
-
-
-
-    #if cnt == 1:
-    #    track, roi = tracker.update(img)
-    #    if track:
-    #        (x, y, w, h) = roi
-    #        print(x, y, w, h)
-    #        x = int(x)
-    #        y = int(y)
-    #        w = int(w)
-    #        h = int(h)
-    #        cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),2)
-    #        fface = img[y:y+h, x:x+w, :]
-    #        fface = cv2.GaussianBlur(fface,(45,45),0)
-    #        img[y:y+h, x:x+w] = fface
-    #    else:
-    #        print("lost tracker")
-    #cv2.imshow('orig',img)
-
-    #print(img.shape)
-    #img = cv2.resize(img, None, None, 0.5, 0.5)
-    #img = cv2.flip(img, 1)
-
-    #pos = detect_object(img, fgbg, face, tracker)
-    #if pos is not None:
-    #    img = cv2.circle(img, (int(pos[0]), int(pos[1])), 10, (255, 0, 0))
-
-
 
     k = cv2.waitKey(10)
     if k == 27:

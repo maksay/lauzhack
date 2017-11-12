@@ -12,7 +12,7 @@ FINAL_SCALE_FACTOR = 3
 iron_man_on = False
 blur_on = False
 
-DRAW_GESTURES = False
+DRAW_GESTURES = True
 
 barwin = np.zeros((1,512,3), np.uint8)
 cv2.namedWindow('BarWindow')
@@ -263,15 +263,11 @@ while( cap.isOpened() ) :
     else:
         img2 = cv2.rectangle(img2, (top_box[0], top_box[1]), (top_box[2], top_box[3]), (0, 0, 255))
 
-    fingerradius = 100
     if pos_lft is not None:
-        if isfinger(thresholded, left_box):
-            img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 5, (0, 255, 0))
-        else:
-            img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 5, (0, 0, 255))
+        img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 10, (0, 0, 255))
 
     if pos_rgt is not None:
-        img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 20, (0, 0, 255))
+        img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
 
 
     # L->R gesture, R->L gesture for right hand
@@ -346,7 +342,7 @@ while( cap.isOpened() ) :
         while len(message_queue) > 0 and message_queue[0][0] < cnt - 30:
             message_queue = message_queue[1:]
         if len(message_queue) > 0 and message_queue[0][0] >= cnt - 30 and message_queue[0][0] <= cnt:
-            img2 = cv2.putText(img2, message_queue[0][1], (0, img.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            img2 = cv2.putText(img2, message_queue[0][1], (0, img2.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
 
     if DRAW_SLIDERS:

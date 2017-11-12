@@ -7,11 +7,17 @@ cv2.namedWindow('BarWindow')
 
 #face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 #face2_cascade = cv2.CascadeClassifier('haarcascade_profileface.xml')
-hand_cascades = [
+face_cascades = [
 cv2.CascadeClassifier(path)
 #for path in ['hands.xml']
 for path in ['haarcascade_frontalface_default.xml',
              'haarcascade_profileface.xml']
+]
+
+fist_cascades = [
+cv2.CascadeClassifier(path)
+#for path in ['hands.xml']
+for path in ['palm.xml']
 ]
 
 def bb_intersection_over_union(boxA, boxB):
@@ -37,9 +43,9 @@ def bb_intersection_over_union(boxA, boxB):
     # return the intersection over union value
     return iou
 
-def detect_face(gray):
+def detect_face(gray, cascades):
 
-    for cascade in hand_cascades:
+    for cascade in cascades:
 
         faces = cascade.detectMultiScale(gray, 1.3, 5)
         face_size = [w * h for (x, y, w, h) in faces]
@@ -51,9 +57,9 @@ def detect_face(gray):
 
     return (None, None, None, None)
 
-def track_face(img, old_face, tracker):
+def track_face(img, old_face, tracker, cascades):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    new_face = detect_face(gray)
+    new_face = detect_face(gray, cascades)
     if old_face[0] is not None:
         face = tracker.update(img)
     else:
@@ -112,29 +118,38 @@ def detect_hands(thresholded, face):
     return False, lft, rgt, left_box, right_box, top_box
 
 face = (None, None, None, None)
-tracker = cv2.Tracker_create("MIL")
+face_tracker = cv2.Tracker_create("MIL")
+
+fist = (None, None, None, None)
+fist_tracker = cv2.Tracker_create("MIL")
+
 cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH,720);
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT,450);
 cnt = 0
+
+left_history = []
+right_history = []
 
 while( cap.isOpened() ) :
     ret,img = cap.read()
     img = cv2.resize(img, None, None, 0.5, 0.5)
     img = cv2.flip(img, 1)
+    img2 = np.copy(img)
 
     # Face detection
-    face = track_face(img, face, tracker)
-
+    face = track_face(img, face, face_tracker, face_cascades)
     if face[0] is not None:
         (x, y, w, h) = face
         x = int(x)
         y = int(y)
         w = int(w)
         h = int(h)
-        img2 = np.copy(img)
         cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
         fface = img2[y:y+h, x:x+w, :]
         fface = cv2.GaussianBlur(fface,(45,45),0)
         img2[y:y+h, x:x+w] = fface
+        #print(face)
     else:
         continue
 
@@ -168,7 +183,25 @@ while( cap.isOpened() ) :
     if pos_rgt is not None:
         img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
 
-    cv2.imshow('orig',img2)
+
+
+    if pos_rgt is not None:
+        right_history.append(np.copy(pos_rgt))
+        print("Adding %d" % len(right_history))
+    else:
+        if len(right_history) <= 15 and len(right_history) >= 7:
+            print(right_box)
+            print(right_history)
+            increasing = 0
+            non_increasing = 0
+            in_margin = 0
+            if right_history[0][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
+                if right_history[-1][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
+                    print("EXIT")
+                    exit(0)
+
+        right_history = []
+
 
 
 
@@ -176,6 +209,9 @@ while( cap.isOpened() ) :
         #thresholded[:, max(0, x - w // 2) : min(x + w + w // 2, img.shape[1])] = 0
         #thresholded[y + h : img.shape[0], :] = 0
 
+    #img2 = cv2.resize(img2, None, None, 3, 3)
+    #print(img2.shape)
+    cv2.imshow('orig',img2)
 
 
     cv2.imshow('bgsub',thresholded)

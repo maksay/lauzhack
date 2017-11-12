@@ -1,10 +1,11 @@
 import cv2
 import numpy as np
 import math
-from control import *
 from button import Button
 import time
+import os
 
+VOLUME_FILE = './volume_val'
 DRAW_SLIDERS = True
 APPLY_SLIDER_ACTIONS = True
 FINAL_SCALE_FACTOR = 3
@@ -23,6 +24,7 @@ WINDOW_MOVER = 0
 iron_man_on = False
 blur_on = False
 slider_on = False
+brightness_multiplier = 1.0
 
 DRAW_GESTURES = True
 
@@ -37,6 +39,15 @@ cv2.CascadeClassifier(path)
 for path in ['haarcascade_frontalface_default.xml',
              'haarcascade_profileface.xml']
 ]
+
+def set_slider_value(val, valtype):
+  global brightness_multiplier
+  if valtype == 'music':
+    os.system('osascript -e "set Volume ' + str(val * 7) + '"')
+  else:
+    print('New brighness mult ' + str(brightness_multiplier))
+    brightness_multiplier = 1 + (val - 0.5)
+
 
 def iron_man_toogle():
     global iron_man_on
@@ -486,6 +497,11 @@ while( cap.isOpened() ) :
             button.radius = BUTTONS_SIZE
             Y += BUTTONS_SHIFT
             img2 = button.draw(img2)
+
+    # Apply brighness mutiplier
+    img2 = np.array(img2, dtype=np.float) * brightness_multiplier
+    img2 = np.clip(img2, 0, 255)
+    img2 = np.array(img2, dtype=np.uint8)
 
     cv2.imshow('orig',img2)
     if WINDOW_MOVER == 1:

@@ -210,8 +210,12 @@ def draw_sliders(img):
         w *= FINAL_SCALE_FACTOR
         h *= FINAL_SCALE_FACTOR
         cv2.rectangle(img,(x, y),(x + w, y + h),(255,0,0),2)
+
+        slider_resized = cv2.resize(slider_img, (w, h))
+        slider_actual = slider_resized[h - int(h * slider_level) : h, :, :]
+
         # Set filled slider level
-        img[y + h - int(h * slider_level) : y + h, x : x + w,:] += np.array([255, 0, 0], dtype=np.float)
+        img[y + h - int(h * slider_level) : y + h, x : x + w,:] += slider_actual
         img[y + h - int(h * slider_level) : y + h, x : x + w,:] /= 2
 
         col_idx += 1
@@ -262,7 +266,8 @@ except:
     face_tracker = cv2.TrackerMIL_create()
 cap = cv2.VideoCapture(0)
 
-iron_man = cv2.imread('./iron_man.png')
+iron_man = cv2.imread('./ironman.png')
+slider_img = cv2.imread('./slider.png')
 
 cap.set(cv2.CAP_PROP_FRAME_WIDTH,720)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)

@@ -6,6 +6,7 @@ from control import *
 # Flags
 DRAW_SLIDERS = False
 APPLY_SLIDER_ACTIONS = False
+DRAW_GESTURES = True
 
 barwin = np.zeros((1,512,3), np.uint8)
 cv2.namedWindow('BarWindow')
@@ -117,44 +118,16 @@ def detect_hands(thresholded, face):
         rgt = None
 
     return False, lft, rgt, left_box, right_box, top_box
-    
-def detectfingers(img):
-  _, contours, hierarchy = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-  
-  length = len(contours)
-  if (length == 0): return 0
 
-  maxArea = -1
-  
-  for i in range(length):
-    area = cv2.contourArea(contours[i])
-    if (area>maxArea):
-      maxArea = area
-      ci = i
-  res = contours[ci]  
-  hull = cv2.convexHull(res, returnPoints=False)  
-  
-  if len(hull)>3:
-    defects = cv2.convexityDefects(res, hull)
-    if type(defects) != type(None):  # avoid crashing.   (BUG not found)
+def isfinger(thresholded, left_box):
+    kernel = np.ones((10,10),np.uint8)
+    eroded = cv2.erode(thresholded, kernel, iterations = 1)
 
-        cnt = 0
-        for i in range(defects.shape[0]):  # calculate the angle
-            s, e, f, d = defects[i][0]
-            start = tuple(res[s][0])
-            end = tuple(res[e][0])
-            far = tuple(res[f][0])
-            a = math.sqrt((end[0] - start[0]) ** 2 + (end[1] - start[1]) ** 2)
-            b = math.sqrt((far[0] - start[0]) ** 2 + (far[1] - start[1]) ** 2)
-            c = math.sqrt((end[0] - far[0]) ** 2 + (end[1] - far[1]) ** 2)
-            angle = math.acos((b ** 2 + c ** 2 - a ** 2) / (2 * b * c))  # cosine theorem
-            if angle <= math.pi / 2:  # angle less than 90 degree, treat as fingers
-                cnt += 1
-                cv2.circle(img, far, 8, [211, 84, 0], -1)
-        return cnt
-  return 0
-  
-  
+    py, px = np.where(eroded[left_box[1] : left_box[3], left_box[0] : left_box[2]] > 0)
+    if len(px) == 0: return False
+    idx = np.argmax(px * img.shape[0] + py)
+    idx2 = np.argmin(py * img.shape[1] + px)
+    return idx == idx2
 
 def draw_sliders(img, pos1, pos2):
     img = np.array(img, dtype=np.float)
@@ -194,15 +167,20 @@ try:
 except:
     face_tracker = cv2.TrackerMIL_create()
 cap = cv2.VideoCapture(0)
+
+
 cap.set(cv2.CAP_PROP_FRAME_WIDTH,720)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)
 cnt = 0
 
 left_history = []
 right_history = []
+message_queue = []
+
 
 while( cap.isOpened() ) :
     ret,img = cap.read()
+
     print(img.shape)
     img = cv2.resize(img, None, None, 0.5, 0.5)
     img = cv2.flip(img, 1)
@@ -224,20 +202,27 @@ while( cap.isOpened() ) :
     else:
         continue
 
+    cnt += 1
     # BG SUB
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (7, 7), 0)
-    if cnt < 30:
-        if cnt == 0:
+    if cnt <= 60:
+        if cnt == 1:
             bg = gray.copy().astype("float")
-            cnt = 1
         else:
             cv2.accumulateWeighted(gray, bg, 0.5)
-            cnt += 1
+
+        img2 = cv2.putText(img2, "INITIALIZATION", (0, img.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.imshow('orig',img2)
 
 
     diff = cv2.absdiff(bg.astype("uint8"), gray)
     thresholded = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)[1]
+
+    if np.sum(thresholded > 0) > 0.5 * thresholded.shape[0] * thresholded.shape[1]:
+        cnt = 1
+        message_queue = []
+        continue
 
     # Hand detection
     on_top, pos_lft, pos_rgt, left_box, right_box, top_box = detect_hands(thresholded, face)
@@ -251,39 +236,88 @@ while( cap.isOpened() ) :
 
     fingerradius = 100
     if pos_lft is not None:
-        img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 10, (0, 0, 255))
-        fingerbox = thresholded[left_box[1]:left_box[3], left_box[0]:left_box[2]]
-        cntFingers = detectfingers(fingerbox)
+        if isfinger(thresholded, left_box):
+            img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 5, (0, 255, 0))
+        else:
+            img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 5, (0, 0, 255))
+
     if pos_rgt is not None:
-        img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
-        fingerbox = thresholded[right_box[1]:right_box[3], right_box[0]:right_box[2]]
-        cntFingers = detectfingers(fingerbox) 
+        img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 20, (0, 0, 255))
 
 
-    # L->R gesture
+    # L->R gesture, R->L gesture for right hand
     if pos_rgt is not None:
         right_history.append(np.copy(pos_rgt))
-        print("Adding %d" % len(right_history))
+        #print("Adding %d" % len(right_history))
     else:
-        if len(right_history) <= 15 and len(right_history) >= 7:
-            print(right_box)
-            print(right_history)
-            increasing = 0
-            non_increasing = 0
-            in_margin = 0
-            if right_history[0][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
-                if right_history[-1][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
-                    print("EXIT")
-                    exit(0)
-
+        if pos_lft is None:
+            if len(right_history) <= 15 and len(right_history) >= 7:
+                if right_history[0][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
+                    if right_history[-1][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
+                        message_queue.append((cnt, "RH: L->R"))
+            if len(right_history) <= 15 and len(right_history) >= 7:
+                if right_history[0][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
+                    if right_history[-1][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
+                        message_queue.append((cnt, "RH: R->L"))
         right_history = []
+
+    # L->R gesture, R->L gesture for left hand
+    if pos_lft is not None:
+        left_history.append(np.copy(pos_lft))
+        #print("Adding %d" % len(right_history))
+    else:
+        if pos_rgt is None:
+            if len(left_history) <= 15 and len(left_history) >= 7:
+                if left_history[0][0] < left_box[0] + (left_box[2] - left_box[0]) * 0.1:
+                    if left_history[-1][0] > left_box[2] - (left_box[2] - left_box[0]) * 0.3:
+                        message_queue.append((cnt, "LH: L->R"))
+            if len(left_history) <= 15 and len(left_history) >= 7:
+                if left_history[0][0] > left_box[2] - (left_box[2] - left_box[0]) * 0.3:
+                    if left_history[-1][0] < left_box[0] + (left_box[2] - left_box[0]) * 0.1:
+                        message_queue.append((cnt, "LH: R->L"))
+        left_history = []
+
+    # Simultaneous L-L, R-R
+    if pos_lft is not None and pos_rgt is not None:
+        if len(left_history) > 10 and len(right_history) > 10:
+            dec_left = 0
+            inc_left = 0
+            for i in range(len(left_history) - 10, len(left_history)):
+                if left_history[i - 1][0] > left_history[i][0]:
+                    dec_left += 1
+                if left_history[i - 1][0] < left_history[i][0]:
+                    inc_left += 1
+            inc_right = 0
+            dec_right = 0
+            for i in range(len(right_history) - 10, len(right_history)):
+                if right_history[i - 1][0] < right_history[i][0]:
+                    inc_right += 1
+                if right_history[i - 1][0] > right_history[i][0]:
+                    dec_right += 1
+            if dec_left == 10 and inc_right == 10:
+                left_history = []
+                right_history = []
+                message_queue.append((cnt, "Zoom: IN"))
+            if inc_left == 10 and dec_right == 10:
+                left_history = []
+                right_history = []
+                message_queue.append((cnt, "Zoom: OUT"))
+
 
     # Draw sliders
     if DRAW_SLIDERS:
         img2 = draw_sliders(img2, pos_lft, pos_rgt)
 
+    # Draw gestures
+    if DRAW_GESTURES:
+        while len(message_queue) > 0 and message_queue[0][0] < cnt - 30:
+            message_queue = message_queue[1:]
+        if len(message_queue) > 0 and message_queue[0][0] >= cnt - 30 and message_queue[0][0] <= cnt:
+            img2 = cv2.putText(img2, message_queue[0][1], (0, img.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+
     img2 = cv2.resize(img2, None, None, 3.2, 3.2)
-    print(img2.shape)
+    #print(img2.shape)
 
     cv2.imshow('orig',img2)
 

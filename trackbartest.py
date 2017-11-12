@@ -154,9 +154,9 @@ try:
     face_tracker = cv2.Tracker_create("MIL")
 except:
     face_tracker = cv2.TrackerMIL_create()
-cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH,500)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT,200)
+cap = cv2.VideoCapture(1)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH,720)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)
 cnt = 0
 
 left_history = []
@@ -238,7 +238,7 @@ while( cap.isOpened() ) :
     if DRAW_SLIDERS:
         img2 = draw_sliders(img2, pos_lft, pos_rgt)
 
-    img2 = cv2.resize(img2, None, None, 3, 3)
+    img2 = cv2.resize(img2, None, None, 3.2, 3.2)
     print(img2.shape)
 
     cv2.imshow('orig',img2)

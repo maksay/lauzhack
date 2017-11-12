@@ -60,15 +60,13 @@ def iron_man_toogle():
     iron_man_on = not iron_man_on
 
 def blur_toogle():
-    global SHOW_HELP
-    SHOW_HELP = not SHOW_HELP
-    #global iron_man_on
-    #global blur_on
+    global iron_man_on
+    global blur_on
 
-    #if iron_man_on:
-    #    iron_man_on = False
+    if iron_man_on:
+        iron_man_on = False
 
-    #blur_on = not blur_on
+    blur_on = not blur_on
 
 def slider_toggle():
     global slider_on
@@ -308,6 +306,17 @@ def impose_image(img, patch, px, py):
     img[px : px + patch.shape[0], py : py + patch.shape[1], 2] = img[px : px + patch.shape[0], py : py + patch.shape[1], 2] * mask + B * (1 - mask)
     return img
 
+
+
+img_control = get_image('helps/control.png')
+img_up = get_image('helps/moveup.png')
+img_dn = get_image('helps/movedn.png')
+img_left = get_image('helps/slideleft.png')
+img_right = get_image('helps/slideright.png')
+img_zoomin = get_image('helps/zoomin.png')
+img_zoomout = get_image('helps/zoomout.png')
+
+all_help = np.zeros((700, 300, 3), dtype = np.uint8)
 face = (None, None, None, None)
 try:
     face_tracker = cv2.Tracker_create("MIL")
@@ -315,7 +324,7 @@ except:
     face_tracker = cv2.TrackerMIL_create()
 cap = cv2.VideoCapture(0)
 
-iron_man = cv2.imread('./ironman.png')
+iron_man = cv2.imread('./iron_man.png')
 slider_music = cv2.imread('./slider_music.png')
 slider_brightness = cv2.imread('./slider_brightness.png')
 
@@ -367,7 +376,7 @@ while( cap.isOpened() ) :
 
             ironManHistory.append([x_new,y_new,w,h])
             ironManHistory = ironManHistory[-3:]
-            
+
             x=y=w=h=0
             for i in ironManHistory:
               x += i[0]
@@ -439,11 +448,6 @@ while( cap.isOpened() ) :
     #else:
     #    img2 = cv2.rectangle(img2, (top_box[0], top_box[1]), (top_box[2], top_box[3]), (0, 0, 255))
 
-    #if pos_lft is not None:
-    #    img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 10, (0, 0, 255))
-
-    #if pos_rgt is not None:
-    #    img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
 
 
 
@@ -557,16 +561,6 @@ while( cap.isOpened() ) :
 
     if SHOW_HELP:
 
-        img_control = get_image('helps/control.png')
-        img_up = get_image('helps/moveup.png')
-        img_dn = get_image('helps/movedn.png')
-        img_left = get_image('helps/slideleft.png')
-        img_right = get_image('helps/slideright.png')
-        img_zoomin = get_image('helps/zoomin.png')
-        img_zoomout = get_image('helps/zoomout.png')
-
-        all_help = np.zeros((700, 300, 3), dtype = np.uint8)
-
         if WINDOW_MOVER == 0:
             all_help[100 * 0 : 100 * 1, :, :] = np.copy(img_up)
         else:
@@ -626,7 +620,13 @@ while( cap.isOpened() ) :
 
 
 
-    #cv2.imshow('bgsub',thresholded)
+    if pos_lft is not None:
+        thresholded = cv2.circle(thresholded, (pos_lft[0], pos_lft[1]), 10, 128)
+
+    if pos_rgt is not None:
+        thresholded = cv2.circle(thresholded, (pos_rgt[0], pos_rgt[1]), 10, 128)
+
+    cv2.imshow('bgsub',thresholded)
 
     k = cv2.waitKey(10)
     if k == 27:

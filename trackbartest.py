@@ -1,10 +1,11 @@
 import cv2
 import numpy as np
 import math
-from control import *
 from button import Button
 import time
+import os
 
+VOLUME_FILE = './volume_val'
 DRAW_SLIDERS = True
 APPLY_SLIDER_ACTIONS = True
 FINAL_SCALE_FACTOR = 3
@@ -24,6 +25,7 @@ SHOW_HELP = 1
 iron_man_on = False
 blur_on = False
 slider_on = False
+brightness_multiplier = 1.0
 
 DRAW_GESTURES = True
 
@@ -39,6 +41,15 @@ for path in ['haarcascade_frontalface_default.xml',
              'haarcascade_profileface.xml']
 ]
 
+def set_slider_value(val, valtype):
+  global brightness_multiplier
+  if valtype == 'music':
+    os.system('osascript -e "set Volume ' + str(val * 7) + '"')
+  else:
+    print('New brighness mult ' + str(brightness_multiplier))
+    brightness_multiplier = 1 + (val - 0.5)
+
+
 def iron_man_toogle():
     global iron_man_on
     global blur_on
@@ -49,21 +60,23 @@ def iron_man_toogle():
     iron_man_on = not iron_man_on
 
 def blur_toogle():
-    global iron_man_on
-    global blur_on
+    global SHOW_HELP
+    SHOW_HELP = not SHOW_HELP
+    #global iron_man_on
+    #global blur_on
 
-    if iron_man_on:
-        iron_man_on = False
+    #if iron_man_on:
+    #    iron_man_on = False
 
-    blur_on = not blur_on
+    #blur_on = not blur_on
 
 def slider_toggle():
     global slider_on
     slider_on = not slider_on
 
 
-sliders = [[(30//FINAL_SCALE_FACTOR, 30//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR, 390//FINAL_SCALE_FACTOR), 0.5, 'music'],
-           [(150//FINAL_SCALE_FACTOR, 30//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR, 390//FINAL_SCALE_FACTOR), 0.5, 'brightness']] # each slider is (x,y,w,h) and slider_level
+sliders = [[(30//FINAL_SCALE_FACTOR, 30//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR, 330//FINAL_SCALE_FACTOR), 0.5, 'music'],
+           [(150//FINAL_SCALE_FACTOR, 30//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR, 330//FINAL_SCALE_FACTOR), 0.5, 'brightness']] # each slider is (x,y,w,h) and slider_level
 buttons = [Button(1.0, iron_man_toogle, (900//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR), 66//FINAL_SCALE_FACTOR),
            Button(1.0, blur_toogle, (750//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR), 66//FINAL_SCALE_FACTOR),
            Button(1.0, slider_toggle, (600//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR), 66//FINAL_SCALE_FACTOR)]
@@ -208,9 +221,12 @@ def draw_sliders(img):
         y *= FINAL_SCALE_FACTOR
         w *= FINAL_SCALE_FACTOR
         h *= FINAL_SCALE_FACTOR
-        cv2.rectangle(img,(x, y),(x + w, y + h),(255,0,0),2)
+        cv2.rectangle(img,(x, y),(x + w, y + h),(189,233,0),4)
 
-        slider_resized = cv2.resize(slider_img, (w, h))
+        if tp == 'music':
+            slider_resized = cv2.resize(slider_music, (w, h))
+        else:
+            slider_resized = cv2.resize(slider_brightness, (w, h))
         slider_actual = slider_resized[h - int(h * slider_level) : h, :, :]
 
         # Set filled slider level
@@ -218,7 +234,6 @@ def draw_sliders(img):
         img[y + h - int(h * slider_level) : y + h, x : x + w,:] /= 2
 
         col_idx += 1
-
 
     img = np.clip(img, 0, 255)
     img = np.array(img, dtype=np.uint8)
@@ -301,7 +316,8 @@ except:
 cap = cv2.VideoCapture(0)
 
 iron_man = cv2.imread('./ironman.png')
-slider_img = cv2.imread('./slider.png')
+slider_music = cv2.imread('./slider_music.png')
+slider_brightness = cv2.imread('./slider_brightness.png')
 
 cap.set(cv2.CAP_PROP_FRAME_WIDTH,720)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)
@@ -575,6 +591,11 @@ while( cap.isOpened() ) :
 
         cv2.moveWindow('Help', 0, 0)
         cv2.imshow('Help', all_help)
+
+    # Apply brighness mutiplier
+    img2 = np.array(img2, dtype=np.float) * brightness_multiplier
+    img2 = np.clip(img2, 0, 255)
+    img2 = np.array(img2, dtype=np.uint8)
 
     cv2.imshow('orig',img2)
     if WINDOW_MOVER == 1:

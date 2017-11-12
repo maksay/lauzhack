@@ -17,8 +17,8 @@ class Button:
     
   def draw(self, img):
     scaled_pos = (self.pos[0] * FINAL_SCALE_FACTOR, self.pos[1] * FINAL_SCALE_FACTOR)
-    img = cv2.circle(img, scaled_pos, FINAL_SCALE_FACTOR * self.radius, [255,0,0])
-    img = cv2.circle(img, scaled_pos, int(FINAL_SCALE_FACTOR * self.radius*self.eps), [255,0,0],-1)
+    img = cv2.circle(img, scaled_pos, FINAL_SCALE_FACTOR * self.radius, [189,233,0], 4)
+    img = cv2.circle(img, scaled_pos, int(FINAL_SCALE_FACTOR * self.radius*self.eps), [221+(221-189)*self.eps,126+(233-128)*self.eps,0], -1)
     return img
 
   def checkPressed(self, img, pos1, pos2):

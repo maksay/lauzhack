@@ -258,7 +258,7 @@ try:
     face_tracker = cv2.Tracker_create("MIL")
 except:
     face_tracker = cv2.TrackerMIL_create()
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 
 iron_man = cv2.imread('./iron_man.png')
 

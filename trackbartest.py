@@ -207,7 +207,7 @@ def draw_sliders(img):
         y *= FINAL_SCALE_FACTOR
         w *= FINAL_SCALE_FACTOR
         h *= FINAL_SCALE_FACTOR
-        cv2.rectangle(img,(x, y),(x + w, y + h),(255,0,0),4)
+        cv2.rectangle(img,(x, y),(x + w, y + h),(189,233,0),4)
 
         if tp == 'music':
             slider_resized = cv2.resize(slider_music, (w, h))

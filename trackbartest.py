@@ -277,6 +277,7 @@ cnt = 0
 left_history = []
 right_history = []
 message_queue = []
+ironManHistory = []
 
 
 t0 = time.time()
@@ -315,8 +316,19 @@ while( cap.isOpened() ) :
             w -= max(x + w - img.shape[1], 0)
             h -= max(y + h - img.shape[0], 0)
 
-            x = x_new
-            y = y_new
+            ironManHistory.append([x_new,y_new,w,h])
+            ironManHistory = ironManHistory[-3:]
+            
+            x=y=w=h=0
+            for i in ironManHistory:
+              x += i[0]
+              y += i[1]
+              w += i[2]
+              h += i[3]
+            x=x//len(ironManHistory)
+            y=y//len(ironManHistory)
+            w=w//len(ironManHistory)
+            h=h//len(ironManHistory)
 
             cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
             iron_man_resized = cv2.resize(iron_man, (w, h))
@@ -327,6 +339,7 @@ while( cap.isOpened() ) :
             img2[y:y+h, x:x+w, 0] = img2[y : y + h, x : x + w, 0] * mask + R * (1 - mask)
             img2[y:y+h, x:x+w, 1] = img2[y : y + h, x : x + w, 1] * mask + G * (1 - mask)
             img2[y:y+h, x:x+w, 2] = img2[y : y + h, x : x + w, 2] * mask + B * (1 - mask)
+        else: ironManHistory = []
     else:
         continue
 

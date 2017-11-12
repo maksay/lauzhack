@@ -312,7 +312,7 @@ while( cap.isOpened() ) :
         h = int(h)
 
         if blur_on:
-            cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
+            #cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
             fface = img2[y:y+h, x:x+w, :]
             fface = cv2.GaussianBlur(fface,(45,45),0)
             img2[y:y+h, x:x+w] = fface

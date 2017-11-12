@@ -1,4 +1,4 @@
-VOLUME_FILE = '/Users/vlyubin/code/lauzhack/lauzhack/volume_val'
+VOLUME_FILE = './volume_val'
 
 def set_slider_value(val, valtype):
   if valtype == 'music':

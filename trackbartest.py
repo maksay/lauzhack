@@ -3,8 +3,9 @@ import numpy as np
 import math
 from control import *
 from button import Button
+import time
 
-DRAW_SLIDERS = False
+DRAW_SLIDERS = True
 APPLY_SLIDER_ACTIONS = True
 FINAL_SCALE_FACTOR = 3
 
@@ -13,9 +14,17 @@ BUTTONS_SPEED = 0
 TOP_BUTTON_ON = 0
 TOP_BUTTON_PRESSED = 0
 
+BUTTONS_SIZE = 30
+BUTTONS_SHIFT = 30
+
+WINDOW_MOVER = 0
+BUTTON_ZOOMER = 0
+
+
 # Mutable flags
 iron_man_on = False
 blur_on = False
+slider_on = False
 
 DRAW_GESTURES = True
 
@@ -49,11 +58,16 @@ def blur_toogle():
 
     blur_on = not blur_on
 
+def slider_toggle():
+    global slider_on
+    slider_on = not slider_on
+
 
 sliders = [[(30//FINAL_SCALE_FACTOR, 30//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR, 390//FINAL_SCALE_FACTOR), 0.5, 'music'],
            [(150//FINAL_SCALE_FACTOR, 30//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR, 390//FINAL_SCALE_FACTOR), 0.5, 'brightness']] # each slider is (x,y,w,h) and slider_level
 buttons = [Button(1.0, iron_man_toogle, (900//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR), 66//FINAL_SCALE_FACTOR),
-           Button(1.0, blur_toogle, (750//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR), 66//FINAL_SCALE_FACTOR)]
+           Button(1.0, blur_toogle, (750//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR), 66//FINAL_SCALE_FACTOR),
+           Button(1.0, slider_toggle, (600//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR), 66//FINAL_SCALE_FACTOR)]
 
 def bb_intersection_over_union(boxA, boxB):
     # determine the (x, y)-coordinates of the intersection rectangle
@@ -208,6 +222,39 @@ def draw_sliders(img):
 
     return img
 
+def get_movements(left_history):
+    ZOOM_CNT = 7
+    if len(left_history) > ZOOM_CNT:
+        dec_left = 0
+        inc_left = 0
+        down_left = 0
+        up_left = 0
+        left_min_x = 1e9
+        left_min_y = 1e9
+        left_max_x = -1e9
+        left_max_y = -1e9
+        for i in range(len(left_history) - ZOOM_CNT, len(left_history)):
+            left_min_x = min(left_min_x, left_history[i][0])
+            left_max_x = max(left_max_x, left_history[i][0])
+            left_min_y = min(left_min_y, left_history[i][1])
+            left_max_y = max(left_max_y, left_history[i][1])
+            if left_history[i - 1][0] > left_history[i][0]:
+                dec_left += 1
+            if left_history[i - 1][0] < left_history[i][0]:
+                inc_left += 1
+            if left_history[i - 1][1] > left_history[i][1]:
+                up_left += 1
+            if left_history[i - 1][1] < left_history[i][1]:
+                down_left += 1
+
+        return dec_left == ZOOM_CNT and left_max_x - left_min_x > left_max_y - left_min_y,\
+               inc_left == ZOOM_CNT and left_max_x - left_min_x > left_max_y - left_min_y,\
+               down_left == ZOOM_CNT and left_max_x - left_min_x < left_max_y - left_min_y,\
+               up_left == ZOOM_CNT and left_max_x - left_min_x < left_max_y - left_min_y
+    else:
+        return False, False, False, False
+
+
 face = (None, None, None, None)
 try:
     face_tracker = cv2.Tracker_create("MIL")
@@ -215,7 +262,7 @@ except:
     face_tracker = cv2.TrackerMIL_create()
 cap = cv2.VideoCapture(0)
 
-iron_man = cv2.imread('./ironman.png')
+iron_man = cv2.imread('./iron_man.png')
 
 cap.set(cv2.CAP_PROP_FRAME_WIDTH,720)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)
@@ -226,7 +273,13 @@ right_history = []
 message_queue = []
 
 
+t0 = time.time()
+
 while( cap.isOpened() ) :
+    if time.time() - t0 > 95:
+        cap.release()
+        continue
+    print(time.time() - t0)
     ret,img = cap.read()
     img = cv2.resize(img, None, None, 0.5, 0.5)
     img = cv2.flip(img, 1)
@@ -240,11 +293,13 @@ while( cap.isOpened() ) :
         y = int(y)
         w = int(w)
         h = int(h)
+
         if blur_on:
             cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
             fface = img2[y:y+h, x:x+w, :]
             fface = cv2.GaussianBlur(fface,(45,45),0)
             img2[y:y+h, x:x+w] = fface
+
         if iron_man_on:
             x_new = max(x - int(0.3 * w), 0)
             y_new = max(y - int(0.3 * h), 0)
@@ -256,7 +311,7 @@ while( cap.isOpened() ) :
 
             x = x_new
             y = y_new
-        
+
             cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
             iron_man_resized = cv2.resize(iron_man, (w, h))
             R = iron_man_resized[:, :, 0]
@@ -295,28 +350,27 @@ while( cap.isOpened() ) :
 
         k = cv2.waitKey(10)
         if k == 27:
-            break
+            exit(0)
         continue
 
-    if np.sum(thresholded > 0) > 0.5 * thresholded.shape[0] * thresholded.shape[1]:
+    if on_top or np.sum(thresholded > 0) > 0.5 * thresholded.shape[0] * thresholded.shape[1]:
         cnt = 1
         message_queue = []
         continue
 
 
-    img2 = cv2.rectangle(img2, (left_box[0], left_box[1]), (left_box[2], left_box[3]), (255, 0, 0))
-    img2 = cv2.rectangle(img2, (right_box[0], right_box[1]), (right_box[2], right_box[3]), (255, 0, 0))
-    print(right_box[0])
-    if not on_top:
-        img2 = cv2.rectangle(img2, (top_box[0], top_box[1]), (top_box[2], top_box[3]), (255, 0, 0))
-    else:
-        img2 = cv2.rectangle(img2, (top_box[0], top_box[1]), (top_box[2], top_box[3]), (0, 0, 255))
+    #img2 = cv2.rectangle(img2, (left_box[0], left_box[1]), (left_box[2], left_box[3]), (255, 0, 0))
+    #img2 = cv2.rectangle(img2, (right_box[0], right_box[1]), (right_box[2], right_box[3]), (255, 0, 0))
+    #if not on_top:
+    #    img2 = cv2.rectangle(img2, (top_box[0], top_box[1]), (top_box[2], top_box[3]), (255, 0, 0))
+    #else:
+    #    img2 = cv2.rectangle(img2, (top_box[0], top_box[1]), (top_box[2], top_box[3]), (0, 0, 255))
 
-    if pos_lft is not None:
-        img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 10, (0, 0, 255))
+    #if pos_lft is not None:
+    #    img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 10, (0, 0, 255))
 
-    if pos_rgt is not None:
-        img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
+    #if pos_rgt is not None:
+    #    img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
 
 
     # L->R gesture, R->L gesture for right hand
@@ -328,13 +382,15 @@ while( cap.isOpened() ) :
             if len(right_history) <= 15 and len(right_history) >= 7:
                 if right_history[0][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
                     if right_history[-1][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
-                        message_queue.append((cnt, "RH: L->R"))
-                        BUTTONS_SPEED = +5
+                        if WINDOW_MOVER == 0 and BUTTON_ZOOMER == 0:
+                            message_queue.append((cnt, "RH: L->R"))
+                            BUTTONS_SPEED = +5
             if len(right_history) <= 15 and len(right_history) >= 7:
                 if right_history[0][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
                     if right_history[-1][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
-                        message_queue.append((cnt, "RH: R->L"))
-                        BUTTONS_SPEED = -5
+                        if WINDOW_MOVER == 0 and BUTTON_ZOOMER == 0:
+                            message_queue.append((cnt, "RH: R->L"))
+                            BUTTONS_SPEED = -5
         right_history = []
 
     # L->R gesture, R->L gesture for left hand
@@ -346,39 +402,50 @@ while( cap.isOpened() ) :
             if len(left_history) <= 15 and len(left_history) >= 7:
                 if left_history[0][0] < left_box[0] + (left_box[2] - left_box[0]) * 0.1:
                     if left_history[-1][0] > left_box[2] - (left_box[2] - left_box[0]) * 0.3:
-                        message_queue.append((cnt, "LH: L->R"))
+                        if WINDOW_MOVER == 0 and BUTTON_ZOOMER == 0:
+                            message_queue.append((cnt, "LH: L->R"))
             if len(left_history) <= 15 and len(left_history) >= 7:
                 if left_history[0][0] > left_box[2] - (left_box[2] - left_box[0]) * 0.3:
                     if left_history[-1][0] < left_box[0] + (left_box[2] - left_box[0]) * 0.1:
-                        message_queue.append((cnt, "LH: R->L"))
+                        if WINDOW_MOVER == 0 and BUTTON_ZOOMER == 0:
+                            message_queue.append((cnt, "LH: R->L"))
         left_history = []
 
     # Simultaneous L-L, R-R
-    if pos_lft is not None and pos_rgt is not None:
-        ZOOM_CNT = 7
-        if len(left_history) > ZOOM_CNT and len(right_history) > ZOOM_CNT:
-            dec_left = 0
-            inc_left = 0
-            for i in range(len(left_history) - ZOOM_CNT, len(left_history)):
-                if left_history[i - 1][0] > left_history[i][0]:
-                    dec_left += 1
-                if left_history[i - 1][0] < left_history[i][0]:
-                    inc_left += 1
-            inc_right = 0
-            dec_right = 0
-            for i in range(len(right_history) - ZOOM_CNT, len(right_history)):
-                if right_history[i - 1][0] < right_history[i][0]:
-                    inc_right += 1
-                if right_history[i - 1][0] > right_history[i][0]:
-                    dec_right += 1
-            if dec_left == ZOOM_CNT and inc_right == ZOOM_CNT:
-                left_history = []
-                right_history = []
-                message_queue.append((cnt, "Zoom: IN"))
-            if inc_left == ZOOM_CNT and dec_right == ZOOM_CNT:
-                left_history = []
-                right_history = []
-                message_queue.append((cnt, "Zoom: OUT"))
+    if pos_lft is not None:
+        dec_left, inc_left, down_left, up_left = get_movements(left_history)
+    else:
+        dec_left, inc_left, down_left, up_left = False, False, False, False
+
+    if pos_rgt is not None:
+        dec_right, inc_right, down_right, up_right = get_movements(right_history)
+    else:
+        dec_right, inc_right, down_right, up_right = False, False, False, False
+
+    if dec_left and inc_right:
+        left_history = []
+        right_history = []
+        if WINDOW_MOVER == 0 and BUTTON_ZOOMER == 0:
+            message_queue.append((cnt, "Zoom: IN"))
+            BUTTON_ZOOMER = 1
+    if inc_left and dec_right:
+        left_history = []
+        right_history = []
+        if WINDOW_MOVER == 0 and BUTTON_ZOOMER == 1:
+            message_queue.append((cnt, "Zoom: OUT"))
+            BUTTON_ZOOMER = 0
+
+    if pos_lft is None and up_right and BUTTONS_POS >= img.shape[1] + 30 and BUTTONS_SPEED == 0 and BUTTON_ZOOMER == 0:
+        left_history = []
+        right_history = []
+        message_queue.append((cnt, "UP RIGHT - MOVE ON"))
+        WINDOW_MOVER = 1
+
+    if pos_lft is not None and up_right and BUTTON_ZOOMER == 0:
+        left_history = []
+        right_history = []
+        message_queue.append((cnt, "UP RIGHT - MOVE OFF"))
+        WINDOW_MOVER = 0
 
 
     # Draw sliders
@@ -398,24 +465,52 @@ while( cap.isOpened() ) :
 
 
     if DRAW_SLIDERS:
-        img2 = draw_sliders(img2)
+        if slider_on:
+            img2 = draw_sliders(img2)
+
+        if BUTTON_ZOOMER == 1:
+            if pos_lft is not None and pos_rgt is None:
+                x_ratio = pos_lft[0] * 1. / (((left_box[0] + left_box[2] - 30) / 30) * 30)
+                y_ratio = pos_lft[1] * 1. / (((left_box[1] + left_box[3] - 30) / 30) * 30)
+                x_ratio = min(x_ratio, 1.0)
+                y_ratio = min(y_ratio, 1.0)
+
+                BUTTONS_SIZE = int(1 + 30 * x_ratio)
+                BUTTINS_SHIFT = int(30 * y_ratio) + BUTTONS_SIZE
+                print(BUTTONS_SIZE, BUTTONS_SHIFT)
 
         BUTTONS_POS = min(BUTTONS_POS + BUTTONS_SPEED, img.shape[1] + 30)
         img2 = cv2.putText(img2, "%s" % (BUTTONS_POS), (0, img.shape[0] - 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        if (BUTTONS_POS  < ((right_box[0] + 50) / 50) * 50 and BUTTONS_SPEED < 0):
+        if (BUTTONS_POS  < ((right_box[0] + 30) / 30) * 30 and BUTTONS_SPEED < 0):
             BUTTONS_SPEED = 0
         if (BUTTONS_POS >= img.shape[1] + 30) and BUTTONS_SPEED > 0:
             BUTTONS_SPEED = 0
-        Y = 30
+        Y = BUTTONS_SIZE + BUTTONS_SHIFT
         for button in buttons:
             button.pos = (BUTTONS_POS, Y)
-            Y += 50
+            button.radius = BUTTONS_SIZE
+            Y += BUTTONS_SHIFT
             img2 = button.draw(img2)
 
     cv2.imshow('orig',img2)
+    if WINDOW_MOVER == 1:
+        if pos_lft is not None:
+            x_ratio = pos_lft[0] * 1. / (((left_box[0] + left_box[2] - 30) / 30) * 30)
+            y_ratio = pos_lft[1] * 1. / (((left_box[1] + left_box[3] - 30) / 30) * 30)
+            x_ratio = min(x_ratio, 1.0)
+            y_ratio = min(y_ratio, 1.0)
+
+            shift_x = int((1440 - img2.shape[1]) * x_ratio)
+            shift_y = int((900 - img2.shape[0]) * y_ratio)
+            print(shift_x, shift_y)
+
+            cv2.moveWindow('orig', shift_x, shift_y)
+
+
+
     cv2.imshow('bgsub',thresholded)
 
     k = cv2.waitKey(10)
     if k == 27:
-        break
+        exit(0)
     continue

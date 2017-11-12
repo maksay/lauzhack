@@ -1,9 +1,9 @@
 import cv2
 import numpy as np
+import math
 from control import *
 from button import Button
 
-# Flags
 DRAW_SLIDERS = True
 APPLY_SLIDER_ACTIONS = True
 FINAL_SCALE_FACTOR = 3
@@ -11,6 +11,8 @@ FINAL_SCALE_FACTOR = 3
 # Mutable flags
 iron_man_on = False
 blur_on = False
+
+DRAW_GESTURES = False
 
 barwin = np.zeros((1,512,3), np.uint8)
 cv2.namedWindow('BarWindow')
@@ -195,12 +197,16 @@ try:
 except:
     face_tracker = cv2.TrackerMIL_create()
 cap = cv2.VideoCapture(0)
+
+
 cap.set(cv2.CAP_PROP_FRAME_WIDTH,720)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)
 cnt = 0
 
 left_history = []
 right_history = []
+message_queue = []
+
 
 while( cap.isOpened() ) :
     ret,img = cap.read()
@@ -225,20 +231,27 @@ while( cap.isOpened() ) :
     else:
         continue
 
+    cnt += 1
     # BG SUB
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (7, 7), 0)
-    if cnt < 30:
-        if cnt == 0:
+    if cnt <= 60:
+        if cnt == 1:
             bg = gray.copy().astype("float")
-            cnt = 1
         else:
             cv2.accumulateWeighted(gray, bg, 0.5)
-            cnt += 1
+
+        img2 = cv2.putText(img2, "INITIALIZATION", (0, img.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.imshow('orig',img2)
 
 
     diff = cv2.absdiff(bg.astype("uint8"), gray)
     thresholded = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)[1]
+
+    if np.sum(thresholded > 0) > 0.5 * thresholded.shape[0] * thresholded.shape[1]:
+        cnt = 1
+        message_queue = []
+        continue
 
     # Hand detection
     on_top, pos_lft, pos_rgt, left_box, right_box, top_box = detect_hands(thresholded, face)
@@ -250,29 +263,75 @@ while( cap.isOpened() ) :
     else:
         img2 = cv2.rectangle(img2, (top_box[0], top_box[1]), (top_box[2], top_box[3]), (0, 0, 255))
 
+    fingerradius = 100
     if pos_lft is not None:
-        img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 10, (0, 0, 255))
+        if isfinger(thresholded, left_box):
+            img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 5, (0, 255, 0))
+        else:
+            img2 = cv2.circle(img2, (pos_lft[0], pos_lft[1]), 5, (0, 0, 255))
+
     if pos_rgt is not None:
-        img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
+        img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 20, (0, 0, 255))
 
 
-    # L->R gesture
+    # L->R gesture, R->L gesture for right hand
     if pos_rgt is not None:
         right_history.append(np.copy(pos_rgt))
-        print("Adding %d" % len(right_history))
+        #print("Adding %d" % len(right_history))
     else:
-        if len(right_history) <= 15 and len(right_history) >= 7:
-            print(right_box)
-            print(right_history)
-            increasing = 0
-            non_increasing = 0
-            in_margin = 0
-            if right_history[0][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
-                if right_history[-1][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
-                    print("EXIT")
-                    exit(0)
-
+        if pos_lft is None:
+            if len(right_history) <= 15 and len(right_history) >= 7:
+                if right_history[0][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
+                    if right_history[-1][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
+                        message_queue.append((cnt, "RH: L->R"))
+            if len(right_history) <= 15 and len(right_history) >= 7:
+                if right_history[0][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
+                    if right_history[-1][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
+                        message_queue.append((cnt, "RH: R->L"))
         right_history = []
+
+    # L->R gesture, R->L gesture for left hand
+    if pos_lft is not None:
+        left_history.append(np.copy(pos_lft))
+        #print("Adding %d" % len(right_history))
+    else:
+        if pos_rgt is None:
+            if len(left_history) <= 15 and len(left_history) >= 7:
+                if left_history[0][0] < left_box[0] + (left_box[2] - left_box[0]) * 0.1:
+                    if left_history[-1][0] > left_box[2] - (left_box[2] - left_box[0]) * 0.3:
+                        message_queue.append((cnt, "LH: L->R"))
+            if len(left_history) <= 15 and len(left_history) >= 7:
+                if left_history[0][0] > left_box[2] - (left_box[2] - left_box[0]) * 0.3:
+                    if left_history[-1][0] < left_box[0] + (left_box[2] - left_box[0]) * 0.1:
+                        message_queue.append((cnt, "LH: R->L"))
+        left_history = []
+
+    # Simultaneous L-L, R-R
+    if pos_lft is not None and pos_rgt is not None:
+        if len(left_history) > 10 and len(right_history) > 10:
+            dec_left = 0
+            inc_left = 0
+            for i in range(len(left_history) - 10, len(left_history)):
+                if left_history[i - 1][0] > left_history[i][0]:
+                    dec_left += 1
+                if left_history[i - 1][0] < left_history[i][0]:
+                    inc_left += 1
+            inc_right = 0
+            dec_right = 0
+            for i in range(len(right_history) - 10, len(right_history)):
+                if right_history[i - 1][0] < right_history[i][0]:
+                    inc_right += 1
+                if right_history[i - 1][0] > right_history[i][0]:
+                    dec_right += 1
+            if dec_left == 10 and inc_right == 10:
+                left_history = []
+                right_history = []
+                message_queue.append((cnt, "Zoom: IN"))
+            if inc_left == 10 and dec_right == 10:
+                left_history = []
+                right_history = []
+                message_queue.append((cnt, "Zoom: OUT"))
+
 
     # Draw sliders
     if APPLY_SLIDER_ACTIONS:
@@ -281,6 +340,14 @@ while( cap.isOpened() ) :
             button.checkPressed(img2, pos_lft, pos_rgt)
 
     img2 = cv2.resize(img2, None, None, FINAL_SCALE_FACTOR, FINAL_SCALE_FACTOR)
+
+    # Draw gestures
+    if DRAW_GESTURES:
+        while len(message_queue) > 0 and message_queue[0][0] < cnt - 30:
+            message_queue = message_queue[1:]
+        if len(message_queue) > 0 and message_queue[0][0] >= cnt - 30 and message_queue[0][0] <= cnt:
+            img2 = cv2.putText(img2, message_queue[0][1], (0, img.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
 
     if DRAW_SLIDERS:
         img2 = draw_sliders(img2)

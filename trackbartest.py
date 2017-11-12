@@ -1,10 +1,16 @@
 import cv2
 import numpy as np
 from control import *
+from button import Button
 
 # Flags
-DRAW_SLIDERS = False
-APPLY_SLIDER_ACTIONS = False
+DRAW_SLIDERS = True
+APPLY_SLIDER_ACTIONS = True
+FINAL_SCALE_FACTOR = 3
+
+# Mutable flags
+iron_man_on = False
+blur_on = False
 
 barwin = np.zeros((1,512,3), np.uint8)
 cv2.namedWindow('BarWindow')
@@ -18,7 +24,29 @@ for path in ['haarcascade_frontalface_default.xml',
              'haarcascade_profileface.xml']
 ]
 
-sliders = [[(30, 30, 30, 100), 0.5, 'music']] # each slider is (x,y,w,h) and slider_level
+def iron_man_toogle():
+    global iron_man_on
+    global blur_on
+
+    if blur_on:
+        blur_on = False
+
+    iron_man_on = not iron_man_on
+
+def blur_toogle():
+    global iron_man_on
+    global blur_on
+
+    if iron_man_on:
+        iron_man_on = False
+
+    blur_on = not blur_on
+
+
+sliders = [[(30//FINAL_SCALE_FACTOR, 30//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR, 390//FINAL_SCALE_FACTOR), 0.5, 'music'],
+           [(150//FINAL_SCALE_FACTOR, 30//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR, 390//FINAL_SCALE_FACTOR), 0.5, 'brightness']] # each slider is (x,y,w,h) and slider_level
+buttons = [Button(1.0, iron_man_toogle, (900//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR), 66//FINAL_SCALE_FACTOR),
+           Button(1.0, blur_toogle, (750//FINAL_SCALE_FACTOR, 90//FINAL_SCALE_FACTOR), 66//FINAL_SCALE_FACTOR)]
 
 def bb_intersection_over_union(boxA, boxB):
     # determine the (x, y)-coordinates of the intersection rectangle
@@ -117,17 +145,12 @@ def detect_hands(thresholded, face):
 
     return False, lft, rgt, left_box, right_box, top_box
 
-def draw_sliders(img, pos1, pos2):
+def apply_sliders(img, pos1, pos2):
     img = np.array(img, dtype=np.float)
     col_idx = 0
 
     for slider in sliders:
         [(x,y,w,h), slider_level, tp] = slider
-        cv2.rectangle(img,(x, y),(x + w, y + h),(255,0,0),2)
-        # Set filled slider level
-        img[y + h - int(h * slider_level) : y + h, x : x + w,:] += np.array([255 // 5, 0, 0], dtype=np.float)
-        img[y + h - int(h * slider_level) : y + h, x : x + w,:] /= 1.2
-
         # Set the new slider_level value
         old_slider_level = slider_level
         if pos1 is not None and y <= pos1[1] and pos1[1] <= y + h and x <= pos1[0] and pos1[0] <= x + w:
@@ -143,6 +166,23 @@ def draw_sliders(img, pos1, pos2):
 
         col_idx += 1
 
+def draw_sliders(img):
+    img = np.array(img, dtype=np.float)
+    col_idx = 0
+
+    for slider in sliders:
+        [(x,y,w,h), slider_level, tp] = slider
+        x *= FINAL_SCALE_FACTOR
+        y *= FINAL_SCALE_FACTOR
+        w *= FINAL_SCALE_FACTOR
+        h *= FINAL_SCALE_FACTOR
+        cv2.rectangle(img,(x, y),(x + w, y + h),(255,0,0),2)
+        # Set filled slider level
+        img[y + h - int(h * slider_level) : y + h, x : x + w,:] += np.array([255, 0, 0], dtype=np.float)
+        img[y + h - int(h * slider_level) : y + h, x : x + w,:] /= 2
+
+        col_idx += 1
+
 
     img = np.clip(img, 0, 255)
     img = np.array(img, dtype=np.uint8)
@@ -154,7 +194,7 @@ try:
     face_tracker = cv2.Tracker_create("MIL")
 except:
     face_tracker = cv2.TrackerMIL_create()
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH,720)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)
 cnt = 0
@@ -164,7 +204,6 @@ right_history = []
 
 while( cap.isOpened() ) :
     ret,img = cap.read()
-    print(img.shape)
     img = cv2.resize(img, None, None, 0.5, 0.5)
     img = cv2.flip(img, 1)
     img2 = np.copy(img)
@@ -178,9 +217,10 @@ while( cap.isOpened() ) :
         w = int(w)
         h = int(h)
         cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
-        fface = img2[y:y+h, x:x+w, :]
-        fface = cv2.GaussianBlur(fface,(45,45),0)
-        img2[y:y+h, x:x+w] = fface
+        if blur_on:
+            fface = img2[y:y+h, x:x+w, :]
+            fface = cv2.GaussianBlur(fface,(45,45),0)
+            img2[y:y+h, x:x+w] = fface
         #print(face)
     else:
         continue
@@ -235,15 +275,20 @@ while( cap.isOpened() ) :
         right_history = []
 
     # Draw sliders
-    if DRAW_SLIDERS:
-        img2 = draw_sliders(img2, pos_lft, pos_rgt)
+    if APPLY_SLIDER_ACTIONS:
+        apply_sliders(img2, pos_lft, pos_rgt)
+        for button in buttons:
+            button.checkPressed(img2, pos_lft, pos_rgt)
 
-    img2 = cv2.resize(img2, None, None, 3.2, 3.2)
-    print(img2.shape)
+    img2 = cv2.resize(img2, None, None, FINAL_SCALE_FACTOR, FINAL_SCALE_FACTOR)
+
+    if DRAW_SLIDERS:
+        img2 = draw_sliders(img2)
+        for button in buttons:
+            img2 = button.draw(img2)
 
     cv2.imshow('orig',img2)
-
-    cv2.imshow('bgsub',thresholded)
+    #cv2.imshow('bgsub',thresholded)
 
     k = cv2.waitKey(10)
     if k == 27:

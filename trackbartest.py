@@ -4,9 +4,14 @@ import math
 from control import *
 from button import Button
 
-DRAW_SLIDERS = True
+DRAW_SLIDERS = False
 APPLY_SLIDER_ACTIONS = True
 FINAL_SCALE_FACTOR = 3
+
+BUTTONS_POS = 2000
+BUTTONS_SPEED = 0
+TOP_BUTTON_ON = 0
+TOP_BUTTON_PRESSED = 0
 
 # Mutable flags
 iron_man_on = False
@@ -126,8 +131,20 @@ def detect_hands(thresholded, face):
 
     MIN_PIX = 100
 
-    if np.sum(eroded[top_box[1] : top_box[3], top_box[0] : top_box[2]] > 0) > MIN_PIX:
-        return True, None, None, left_box, right_box, top_box
+    global TOP_BUTTON_PRESSED
+    global TOP_BUTTON_ON
+
+    if TOP_BUTTON_PRESSED < 0:
+        TOP_BUTTON_PRESSED += 1
+    else:
+        if np.sum(eroded[top_box[1] : top_box[3], top_box[0] : top_box[2]] > 0) > MIN_PIX:
+            TOP_BUTTON_PRESSED += 1
+            if TOP_BUTTON_PRESSED == 30:
+                TOP_BUTTON_PRESSED = -30
+                TOP_BUTTON_ON = 1 - TOP_BUTTON_ON
+                return True, None, None, left_box, right_box, top_box
+        else:
+            TOP_BUTTON_PRESSED = 0
 
 
     py, px = np.where(eroded[left_box[1] : left_box[3], left_box[0] : left_box[2]] > 0)
@@ -231,11 +248,13 @@ while( cap.isOpened() ) :
     else:
         continue
 
+
     cnt += 1
     # BG SUB
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (7, 7), 0)
-    if cnt <= 60:
+
+    if cnt <= 30:
         if cnt == 1:
             bg = gray.copy().astype("float")
         else:
@@ -244,20 +263,29 @@ while( cap.isOpened() ) :
         img2 = cv2.putText(img2, "INITIALIZATION", (0, img.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         cv2.imshow('orig',img2)
 
-
+    # Hand detection
     diff = cv2.absdiff(bg.astype("uint8"), gray)
     thresholded = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)[1]
+    on_top, pos_lft, pos_rgt, left_box, right_box, top_box = detect_hands(thresholded, face)
+
+    if not TOP_BUTTON_ON:
+        img2 = cv2.resize(img2, None, None, FINAL_SCALE_FACTOR, FINAL_SCALE_FACTOR)
+        cv2.imshow('orig',img2)
+
+        k = cv2.waitKey(10)
+        if k == 27:
+            break
+        continue
 
     if np.sum(thresholded > 0) > 0.5 * thresholded.shape[0] * thresholded.shape[1]:
         cnt = 1
         message_queue = []
         continue
 
-    # Hand detection
-    on_top, pos_lft, pos_rgt, left_box, right_box, top_box = detect_hands(thresholded, face)
 
     img2 = cv2.rectangle(img2, (left_box[0], left_box[1]), (left_box[2], left_box[3]), (255, 0, 0))
     img2 = cv2.rectangle(img2, (right_box[0], right_box[1]), (right_box[2], right_box[3]), (255, 0, 0))
+    print(right_box[0])
     if not on_top:
         img2 = cv2.rectangle(img2, (top_box[0], top_box[1]), (top_box[2], top_box[3]), (255, 0, 0))
     else:
@@ -280,10 +308,12 @@ while( cap.isOpened() ) :
                 if right_history[0][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
                     if right_history[-1][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
                         message_queue.append((cnt, "RH: L->R"))
+                        BUTTONS_SPEED = +5
             if len(right_history) <= 15 and len(right_history) >= 7:
                 if right_history[0][0] > right_box[2] - (right_box[2] - right_box[0]) * 0.2:
                     if right_history[-1][0] < right_box[0] + (right_box[2] - right_box[0]) * 0.2:
                         message_queue.append((cnt, "RH: R->L"))
+                        BUTTONS_SPEED = -5
         right_history = []
 
     # L->R gesture, R->L gesture for left hand
@@ -304,26 +334,27 @@ while( cap.isOpened() ) :
 
     # Simultaneous L-L, R-R
     if pos_lft is not None and pos_rgt is not None:
-        if len(left_history) > 10 and len(right_history) > 10:
+        ZOOM_CNT = 7
+        if len(left_history) > ZOOM_CNT and len(right_history) > ZOOM_CNT:
             dec_left = 0
             inc_left = 0
-            for i in range(len(left_history) - 10, len(left_history)):
+            for i in range(len(left_history) - ZOOM_CNT, len(left_history)):
                 if left_history[i - 1][0] > left_history[i][0]:
                     dec_left += 1
                 if left_history[i - 1][0] < left_history[i][0]:
                     inc_left += 1
             inc_right = 0
             dec_right = 0
-            for i in range(len(right_history) - 10, len(right_history)):
+            for i in range(len(right_history) - ZOOM_CNT, len(right_history)):
                 if right_history[i - 1][0] < right_history[i][0]:
                     inc_right += 1
                 if right_history[i - 1][0] > right_history[i][0]:
                     dec_right += 1
-            if dec_left == 10 and inc_right == 10:
+            if dec_left == ZOOM_CNT and inc_right == ZOOM_CNT:
                 left_history = []
                 right_history = []
                 message_queue.append((cnt, "Zoom: IN"))
-            if inc_left == 10 and dec_right == 10:
+            if inc_left == ZOOM_CNT and dec_right == ZOOM_CNT:
                 left_history = []
                 right_history = []
                 message_queue.append((cnt, "Zoom: OUT"))
@@ -347,11 +378,21 @@ while( cap.isOpened() ) :
 
     if DRAW_SLIDERS:
         img2 = draw_sliders(img2)
+
+        BUTTONS_POS = min(BUTTONS_POS + BUTTONS_SPEED, img.shape[1] + 30)
+        img2 = cv2.putText(img2, "%s" % (BUTTONS_POS), (0, img.shape[0] - 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        if (BUTTONS_POS  < ((right_box[0] + 50) / 50) * 50 and BUTTONS_SPEED < 0):
+            BUTTONS_SPEED = 0
+        if (BUTTONS_POS >= img.shape[1] + 30) and BUTTONS_SPEED > 0:
+            BUTTONS_SPEED = 0
+        Y = 30
         for button in buttons:
+            button.pos = (BUTTONS_POS, Y)
+            Y += 50
             img2 = button.draw(img2)
 
     cv2.imshow('orig',img2)
-    #cv2.imshow('bgsub',thresholded)
+    cv2.imshow('bgsub',thresholded)
 
     k = cv2.waitKey(10)
     if k == 27:

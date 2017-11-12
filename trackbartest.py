@@ -1,10 +1,11 @@
 import cv2
 import numpy as np
 import math
-from control import *
 from button import Button
 import time
+import os
 
+VOLUME_FILE = './volume_val'
 DRAW_SLIDERS = True
 APPLY_SLIDER_ACTIONS = True
 FINAL_SCALE_FACTOR = 3
@@ -18,11 +19,13 @@ BUTTONS_SIZE = 15
 BUTTONS_SHIFT = 30
 
 WINDOW_MOVER = 0
+SHOW_HELP = 1
 
 # Mutable flags
 iron_man_on = False
 blur_on = False
 slider_on = False
+brightness_multiplier = 1.0
 
 DRAW_GESTURES = True
 
@@ -38,6 +41,15 @@ for path in ['haarcascade_frontalface_default.xml',
              'haarcascade_profileface.xml']
 ]
 
+def set_slider_value(val, valtype):
+  global brightness_multiplier
+  if valtype == 'music':
+    os.system('osascript -e "set Volume ' + str(val * 7) + '"')
+  else:
+    print('New brighness mult ' + str(brightness_multiplier))
+    brightness_multiplier = 1 + (val - 0.5)
+
+
 def iron_man_toogle():
     global iron_man_on
     global blur_on
@@ -48,13 +60,15 @@ def iron_man_toogle():
     iron_man_on = not iron_man_on
 
 def blur_toogle():
-    global iron_man_on
-    global blur_on
+    global SHOW_HELP
+    SHOW_HELP = not SHOW_HELP
+    #global iron_man_on
+    #global blur_on
 
-    if iron_man_on:
-        iron_man_on = False
+    #if iron_man_on:
+    #    iron_man_on = False
 
-    blur_on = not blur_on
+    #blur_on = not blur_on
 
 def slider_toggle():
     global slider_on
@@ -207,7 +221,7 @@ def draw_sliders(img):
         y *= FINAL_SCALE_FACTOR
         w *= FINAL_SCALE_FACTOR
         h *= FINAL_SCALE_FACTOR
-        cv2.rectangle(img,(x, y),(x + w, y + h),(255,0,0),4)
+        cv2.rectangle(img,(x, y),(x + w, y + h),(189,233,0),4)
 
         if tp == 'music':
             slider_resized = cv2.resize(slider_music, (w, h))
@@ -258,6 +272,41 @@ def get_movements(left_history):
     else:
         return False, False, False, False
 
+def get_image(path):
+    img = cv2.imread(path)
+    px, py = np.where(np.int32(img[:, :, 0]) +
+                      np.int32(img[:, :, 1]) +
+                      np.int32(img[:, :, 2]) < 255 * 3)
+    min_x = np.min(px) - 10
+    min_y = np.min(py) - 10
+    max_x = np.max(px) + 10
+    max_y = np.max(py) + 10
+    while(max_x - min_x < 200):
+        max_x += 1
+    while(max_y - min_y < 599):
+        max_y += 1
+        min_y -= 1
+    while(max_y - min_y < 600):
+        max_y += 1
+    patch = img[min_x : max_x + 1, min_y : max_y + 1, :]
+    patch = cv2.resize(patch, (300, 100))
+    return patch
+
+def impose_image(img, patch, px, py):
+    #px = (int(px) // 50) * 50
+    #py = (int(py) // 50) * 50
+    px = int(py)
+    py = int(py)
+    img[px : px + patch.shape[0], py : py + patch.shape[1], :] = np.uint8(img[px : px + patch.shape[0], py : py + patch.shape[1], :] * 0.5 + patch * 0.5)
+    return img
+    R = patch[:, :, 0]
+    G = patch[:, :, 1]
+    B = patch[:, :, 2]
+    mask = ((R == 255) & (G == 255) & (B == 255))
+    img[px : px + patch.shape[0], py : py + patch.shape[1], 0] = img[px : px + patch.shape[0], py : py + patch.shape[1], 0] * mask + R * (1 - mask)
+    img[px : px + patch.shape[0], py : py + patch.shape[1], 1] = img[px : px + patch.shape[0], py : py + patch.shape[1], 1] * mask + G * (1 - mask)
+    img[px : px + patch.shape[0], py : py + patch.shape[1], 2] = img[px : px + patch.shape[0], py : py + patch.shape[1], 2] * mask + B * (1 - mask)
+    return img
 
 face = (None, None, None, None)
 try:
@@ -286,7 +335,7 @@ while( cap.isOpened() ) :
     if time.time() - t0 > 95:
         cap.release()
         continue
-    print(time.time() - t0)
+    #print(time.time() - t0)
     ret,img = cap.read()
     img = cv2.resize(img, None, None, 0.5, 0.5)
     img = cv2.flip(img, 1)
@@ -365,6 +414,11 @@ while( cap.isOpened() ) :
 
     if not TOP_BUTTON_ON:
         img2 = cv2.resize(img2, None, None, FINAL_SCALE_FACTOR, FINAL_SCALE_FACTOR)
+        img2 = cv2.rectangle(img2, (360, 0), (720, 720),
+                                    (189, 233, 0), 4)
+        img2 = cv2.circle(img2, (540, 150), 100,
+                                    (189, 233, 0), 4)
+
         cv2.imshow('orig',img2)
 
         k = cv2.waitKey(10)
@@ -390,6 +444,7 @@ while( cap.isOpened() ) :
 
     #if pos_rgt is not None:
     #    img2 = cv2.circle(img2, (pos_rgt[0], pos_rgt[1]), 10, (0, 0, 255))
+
 
 
     # L->R gesture, R->L gesture for right hand
@@ -500,6 +555,61 @@ while( cap.isOpened() ) :
             Y += BUTTONS_SHIFT
             img2 = button.draw(img2)
 
+    if SHOW_HELP:
+
+        img_control = get_image('helps/control.png')
+        img_up = get_image('helps/moveup.png')
+        img_dn = get_image('helps/movedn.png')
+        img_left = get_image('helps/slideleft.png')
+        img_right = get_image('helps/slideright.png')
+        img_zoomin = get_image('helps/zoomin.png')
+        img_zoomout = get_image('helps/zoomout.png')
+
+        all_help = np.zeros((700, 300, 3), dtype = np.uint8)
+
+        if WINDOW_MOVER == 0:
+            all_help[100 * 0 : 100 * 1, :, :] = np.copy(img_up)
+        else:
+            all_help[100 * 0 : 100 * 1, :, :] = np.copy(img_up) // 2
+
+        if WINDOW_MOVER == 1:
+            all_help[100 * 1 : 100 * 2, :, :] = np.copy(img_dn)
+        else:
+            all_help[100 * 1 : 100 * 2, :, :] = np.copy(img_dn) // 2
+
+        if WINDOW_MOVER == 1:
+            all_help[100 * 2 : 100 * 3, :, :] = np.copy(img_control)
+        else:
+            all_help[100 * 2 : 100 * 3, :, :] = np.copy(img_control) // 2
+
+        if WINDOW_MOVER == 0:
+            all_help[100 * 3 : 100 * 4, :, :] = np.copy(img_zoomin)
+        else:
+            all_help[100 * 3 : 100 * 4, :, :] = np.copy(img_zoomin) // 2
+
+        if WINDOW_MOVER == 0:
+            all_help[100 * 4 : 100 * 5, :, :] = np.copy(img_zoomout)
+        else:
+            all_help[100 * 4 : 100 * 5, :, :] = np.copy(img_zoomout) // 2
+
+        if WINDOW_MOVER == 0:
+            all_help[100 * 5 : 100 * 6, :, :] = np.copy(img_left)
+        else:
+            all_help[100 * 5 : 100 * 6, :, :] = np.copy(img_left) // 2
+
+        if WINDOW_MOVER == 0:
+            all_help[100 * 6 : 100 * 7, :, :] = np.copy(img_right)
+        else:
+            all_help[100 * 6 : 100 * 7, :, :] = np.copy(img_right) // 2
+
+        cv2.moveWindow('Help', 0, 0)
+        cv2.imshow('Help', all_help)
+
+    # Apply brighness mutiplier
+    img2 = np.array(img2, dtype=np.float) * brightness_multiplier
+    img2 = np.clip(img2, 0, 255)
+    img2 = np.array(img2, dtype=np.uint8)
+
     cv2.imshow('orig',img2)
     if WINDOW_MOVER == 1:
         if pos_lft is not None:
@@ -516,7 +626,7 @@ while( cap.isOpened() ) :
 
 
 
-    cv2.imshow('bgsub',thresholded)
+    #cv2.imshow('bgsub',thresholded)
 
     k = cv2.waitKey(10)
     if k == 27:

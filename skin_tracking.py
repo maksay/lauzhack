@@ -18,13 +18,13 @@ while True:
 
 	image = cv2.blur(image,(5,5)) # *** try blurring with different kernel sizes to check effectiveness ***
 
-	"""OpenCV uses different ranges for HSV as compared to other applications. h:0-180 s:0-255 v:0-255 
+	"""OpenCV uses different ranges for HSV as compared to other applications. h:0-180 s:0-255 v:0-255
 	hsv color range for use in OpenCV [0,30,60 - 20,150,255] OR [0,40,60-20,150,255] OR [0,10,60-20,150,255]
 	NOTE: since skin color can have a wide range, can use markers on finger tips to target a smaller and easy to use color range """
 	MIN = np.array([0,30,60],np.uint8)
 	MAX = np.array([20,150,179],np.uint8) #HSV: V-79%
 	HSVImg = cv2.cvtColor(image,cv2.COLOR_BGR2HSV)
-	
+
 	filterImg = cv2.inRange(HSVImg,MIN,MAX) #filtering by skin color
 	filterImg = cv2.erode(filterImg,cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3))) #eroding the image
 	filterImg = cv2.dilate(filterImg,cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3))) #dilating the image

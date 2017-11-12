@@ -215,6 +215,7 @@ except:
     face_tracker = cv2.TrackerMIL_create()
 cap = cv2.VideoCapture(0)
 
+iron_man = cv2.imread('./ironman.png')
 
 cap.set(cv2.CAP_PROP_FRAME_WIDTH,720)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)
@@ -239,12 +240,32 @@ while( cap.isOpened() ) :
         y = int(y)
         w = int(w)
         h = int(h)
-        cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
         if blur_on:
+            cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
             fface = img2[y:y+h, x:x+w, :]
             fface = cv2.GaussianBlur(fface,(45,45),0)
             img2[y:y+h, x:x+w] = fface
-        #print(face)
+        if iron_man_on:
+            x_new = max(x - int(0.3 * w), 0)
+            y_new = max(y - int(0.3 * h), 0)
+            w = int(1.6 * w)
+            h = int(1.6 * h)
+
+            w -= max(x + w - img.shape[1], 0)
+            h -= max(y + h - img.shape[0], 0)
+
+            x = x_new
+            y = y_new
+        
+            cv2.rectangle(img2,(x,y),(x+w,y+h),(255,0,0),2)
+            iron_man_resized = cv2.resize(iron_man, (w, h))
+            R = iron_man_resized[:, :, 0]
+            G = iron_man_resized[:, :, 1]
+            B = iron_man_resized[:, :, 2]
+            mask = (R == 255) & (G  == 255) & (B == 255)
+            img2[y:y+h, x:x+w, 0] = img2[y : y + h, x : x + w, 0] * mask + R * (1 - mask)
+            img2[y:y+h, x:x+w, 1] = img2[y : y + h, x : x + w, 1] * mask + G * (1 - mask)
+            img2[y:y+h, x:x+w, 2] = img2[y : y + h, x : x + w, 2] * mask + B * (1 - mask)
     else:
         continue
 

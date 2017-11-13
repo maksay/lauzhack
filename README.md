@@ -4,7 +4,7 @@
 
 ## How to run the program
 
-`python3 trackbartest.py`
+`python3 trackbartest.py` (or `sudo python3 trackbartest.py` if you want sound changing to work).
 
 Prerequisites are python 3.5.x / 3.6.x with OpenCV 3.2.4 / 3.3.0 and numpy. The inialization step is rising both hands into the circle. Afterwards you can do steps showcased in the demo (we'll add a link once it's in the video).
 

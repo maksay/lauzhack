@@ -44,7 +44,10 @@ for path in ['haarcascade_frontalface_default.xml',
 def set_slider_value(val, valtype):
   global brightness_multiplier
   if valtype == 'music':
-    os.system('osascript -e "set Volume ' + str(val * 7) + '"')
+    try:
+      os.system('osascript -e "set Volume ' + str(val * 7) + '"')
+    except:
+      print('Please run the program with sudo for sound changes to work!')
   else:
     print('New brighness mult ' + str(brightness_multiplier))
     brightness_multiplier = 1 + (val - 0.5)

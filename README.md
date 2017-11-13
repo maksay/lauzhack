@@ -2,6 +2,13 @@
 
 ![alt text](maksai.jpg "How manipulating looks like")
 
+## How to run the program
+
+`python3 trackbartest.py`
+
+Prerequisites are python 3.5.x / 3.6.x with OpenCV 3.2.4 / 3.3.0 and numpy. The inialization step is rising both hands into the circle. Afterwards you can do steps showcased in the demo (we'll add a link once it's in the video).
+
+
 ## Inspiration
 In scenarios where you don't have access to mouse & keyboard, one way to manipulate a computer/TV is by using gestures captured by the camera. This is often portrayed in sci-fi movies (including "Iron Man"), but is quite hard to implement. We decided to give it a try :)
 
